@@ -6,7 +6,7 @@ public protocol WiFiDaemonClientProviding: Sendable {
     func fetchStatus() async throws -> DaemonStatus
     func fetchTelemetry() async throws -> [InterfaceStat]
     func fetchHardwareTopology() async throws -> [HardwareTopologyNode]
-    func fetchPingDiagnostics() async throws -> [PingResult]
+    func fetchPingDiagnostics(interface: String, target: String) async throws -> [PingResult]
     func fetchUptimeStats() async throws -> StabilityStats
 }
 
@@ -21,8 +21,13 @@ public actor WiFiDaemonClient: WiFiDaemonClientProviding {
         self.session = URLSession(configuration: config)
     }
 
-    public func fetchPingDiagnostics() async throws -> [PingResult] {
-        let url = baseURL.appendingPathComponent("api/diagnostics/ping")
+    public func fetchPingDiagnostics(interface: String = "en0", target: String = "1.1.1.1") async throws -> [PingResult] {
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/diagnostics/ping"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "interface", value: interface),
+            URLQueryItem(name: "target", value: target)
+        ]
+        let url = components.url ?? baseURL.appendingPathComponent("api/diagnostics/ping")
         let (data, response) = try await session.data(from: url)
 
         guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {

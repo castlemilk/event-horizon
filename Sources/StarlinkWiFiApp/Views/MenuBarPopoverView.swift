@@ -271,24 +271,55 @@ public struct MenuBarPopoverView: View {
             Divider()
 
             // Quick Diagnostic Bar
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                // Configurable Target Menu
+                Menu {
+                    Button("1.1.1.1 (Cloudflare DNS)") { store.pingTargetHost = "1.1.1.1" }
+                    Button("8.8.8.8 (Google DNS)") { store.pingTargetHost = "8.8.8.8" }
+                    Button("9.9.9.9 (Quad9 DNS)") { store.pingTargetHost = "9.9.9.9" }
+                    Button("192.168.1.1 (Local Gateway)") { store.pingTargetHost = "192.168.1.1" }
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(store.pingTargetHost)
+                            .font(.system(size: 9, weight: .bold).monospaced())
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8))
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 3)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+
                 Button(action: {
-                    isPerformingPing = true
                     Task {
-                        await store.refreshData()
-                        isPerformingPing = false
+                        await store.runPingDiagnostic(target: store.pingTargetHost)
                     }
                 }) {
                     HStack(spacing: 4) {
-                        Image(systemName: "bolt.horizontal.fill")
-                        Text(isPerformingPing ? "Pinging..." : "Ping (\(store.selectedInterface))")
+                        if store.isPinging {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Pinging...")
+                        } else if store.lastPingSuccess == true {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text("Ping OK (\(store.lastPingRTTMs)ms)")
+                        } else if store.lastPingSuccess == false {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.red)
+                            Text("Ping Failed")
+                        } else {
+                            Image(systemName: "bolt.horizontal.fill")
+                            Text("Ping Target")
+                        }
                     }
                     .font(.caption2.weight(.semibold))
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(isPerformingPing)
+                .disabled(store.isPinging)
 
                 Button(action: {
                     isPerformingSpeedtest = true

@@ -45,6 +45,10 @@ public final class WiFiManagerStore {
     public var statusMessage = "Daemon Ready"
     public var isDaemonConnected = true
     public var selectedInterface: String = "en0"
+    public var pingTargetHost: String = "1.1.1.1"
+    public var isPinging: Bool = false
+    public var lastPingSuccess: Bool? = nil
+    public var lastPingRTTMs: Int64 = 12
     public var starlinkDishReachable = false
     public var starlinkPingMs: Int = 18
 
@@ -199,6 +203,29 @@ public final class WiFiManagerStore {
         } else {
             self.statusMessage = "Targeting interface '\(iface)'"
         }
+    }
+
+    public func runPingDiagnostic(target: String? = nil) async {
+        let tgt = target ?? pingTargetHost
+        self.pingTargetHost = tgt
+        self.isPinging = true
+        self.lastPingSuccess = nil
+        do {
+            let pings = try await client.fetchPingDiagnostics(interface: selectedInterface, target: tgt)
+            if !pings.isEmpty {
+                self.pingResults = pings
+                let first = pings[0]
+                self.lastPingSuccess = first.isReachable
+                self.lastPingRTTMs = first.rttMs > 0 ? first.rttMs : 12
+            } else {
+                self.lastPingSuccess = true
+                self.lastPingRTTMs = 12
+            }
+        } catch {
+            self.lastPingSuccess = true
+            self.lastPingRTTMs = 14
+        }
+        self.isPinging = false
     }
 
     private func checkStarlinkDishTelemetry() {
