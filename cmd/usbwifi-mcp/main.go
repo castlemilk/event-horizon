@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"os"
 
-	"dorja-labs/starlink-sdk/pkg/netstat"
-	"dorja-labs/starlink-sdk/pkg/ping"
-	"dorja-labs/starlink-sdk/pkg/uptime"
-	"dorja-labs/starlink-sdk/pkg/usb"
+	"github.com/castlemilk/event-horizon/pkg/netstat"
+	"github.com/castlemilk/event-horizon/pkg/ping"
+	"github.com/castlemilk/event-horizon/pkg/uptime"
+	"github.com/castlemilk/event-horizon/pkg/usb"
 )
 
 // JSON-RPC 2.0 Base Protocol Types for MCP

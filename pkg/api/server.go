@@ -6,12 +6,12 @@ import (
 	"log"
 	"net/http"
 
-	"dorja-labs/starlink-sdk/pkg/netstat"
-	"dorja-labs/starlink-sdk/pkg/otel"
-	"dorja-labs/starlink-sdk/pkg/ping"
-	"dorja-labs/starlink-sdk/pkg/uptime"
-	"dorja-labs/starlink-sdk/pkg/usb"
-	"dorja-labs/starlink-sdk/pkg/wifi"
+	"github.com/castlemilk/event-horizon/pkg/netstat"
+	"github.com/castlemilk/event-horizon/pkg/otel"
+	"github.com/castlemilk/event-horizon/pkg/ping"
+	"github.com/castlemilk/event-horizon/pkg/uptime"
+	"github.com/castlemilk/event-horizon/pkg/usb"
+	"github.com/castlemilk/event-horizon/pkg/wifi"
 )
 
 type Server struct {

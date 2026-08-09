@@ -1,0 +1,1291 @@
+{
+  "builtTestProducts" : [
+    {
+      "binaryPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.xctest/Contents/MacOS/UniversalWiFiManagerPackageTests",
+      "packagePath" : "/Users/benebsworth/projects/event-horizon",
+      "productName" : "UniversalWiFiManagerPackageTests"
+    }
+  ],
+  "copyCommands" : {
+    "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManager_StarlinkWiFiApp.bundle/apple_silicon_wifi.jpg" : {
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Resources/apple_silicon_wifi.jpg"
+        }
+      ],
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManager_StarlinkWiFiApp.bundle/apple_silicon_wifi.jpg"
+        }
+      ]
+    },
+    "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManager_StarlinkWiFiApp.bundle/blackhole_logo.jpg" : {
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Resources/blackhole_logo.jpg"
+        }
+      ],
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManager_StarlinkWiFiApp.bundle/blackhole_logo.jpg"
+        }
+      ]
+    }
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.StarlinkWiFiApp-arm64-apple-macosx14.0-release.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/sources",
+      "importPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/StarlinkWiFiApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/ConnectHotspotSheet.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/DeviceManagementCard.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/DeviceSettingsView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/EndpointListView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/FirmwareUpdatesView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/HardwareMappingView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LinkPortSidebarView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LiveMetricsAnalyticsView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LiveThroughputChartView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/MainDashboardView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/MenuBarPopoverView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/NetworkDiagnosticHeaderView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/NetworkMetricsView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/OverviewDashboardView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/PerDeviceDetailView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/PerDongleActionPanel.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/StarlinkTelemetryView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/USBDongleVectorView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/WiFiDiagnosticView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/DerivedSources/resource_bundle_accessor.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<StarlinkWiFiApp-arm64-apple-macosx14.0-release.module-resources>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/StarlinkWiFiCore.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "StarlinkWiFiApp",
+      "moduleOutputPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/StarlinkWiFiApp.swiftmodule",
+      "objects" : [
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/StarlinkWiFiApp.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/ConnectHotspotSheet.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/DeviceManagementCard.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/DeviceSettingsView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/EndpointListView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/FirmwareUpdatesView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/HardwareMappingView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/LinkPortSidebarView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/LiveMetricsAnalyticsView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/LiveThroughputChartView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/MainDashboardView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/MenuBarPopoverView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/NetworkDiagnosticHeaderView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/NetworkMetricsView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/OverviewDashboardView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/PerDeviceDetailView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/PerDongleActionPanel.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/StarlinkTelemetryView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/USBDongleVectorView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/WiFiDiagnosticView.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/resource_bundle_accessor.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-whole-module-optimization",
+        "-num-threads",
+        "12",
+        "-serialize-diagnostics",
+        "-O",
+        "-j12",
+        "-DSWIFT_PACKAGE",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_AVAILABLE",
+        "-module-cache-path",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "StarlinkWiFiApp_main",
+        "-swift-version",
+        "5",
+        "-enable-upcoming-feature",
+        "StrictConcurrency",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "event_horizon"
+      ],
+      "outputFileMapPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/StarlinkWiFiApp.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/ConnectHotspotSheet.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/DeviceManagementCard.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/DeviceSettingsView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/EndpointListView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/FirmwareUpdatesView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/HardwareMappingView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/LinkPortSidebarView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/LiveMetricsAnalyticsView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/LiveThroughputChartView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/MainDashboardView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/MenuBarPopoverView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/NetworkDiagnosticHeaderView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/NetworkMetricsView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/OverviewDashboardView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/PerDeviceDetailView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/PerDongleActionPanel.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/StarlinkTelemetryView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/USBDongleVectorView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/WiFiDiagnosticView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/resource_bundle_accessor.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/StarlinkWiFiApp.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/StarlinkWiFiApp.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/ConnectHotspotSheet.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/DeviceManagementCard.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/DeviceSettingsView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/EndpointListView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/FirmwareUpdatesView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/HardwareMappingView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LinkPortSidebarView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LiveMetricsAnalyticsView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LiveThroughputChartView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/MainDashboardView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/MenuBarPopoverView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/NetworkDiagnosticHeaderView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/NetworkMetricsView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/OverviewDashboardView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/PerDeviceDetailView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/PerDongleActionPanel.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/StarlinkTelemetryView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/USBDongleVectorView.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/WiFiDiagnosticView.swift",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/DerivedSources/resource_bundle_accessor.swift"
+      ],
+      "tempsPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build",
+      "wholeModuleOptimization" : true
+    },
+    "C.StarlinkWiFiCore-arm64-apple-macosx14.0-release.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/sources",
+      "importPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Models/AccessPoint.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Models/TelemetryModels.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Services/RuntimeSupervisor.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Services/WiFiDaemonClient.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/ViewModels/WiFiManagerStore.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "StarlinkWiFiCore",
+      "moduleOutputPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/StarlinkWiFiCore.swiftmodule",
+      "objects" : [
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/AccessPoint.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/TelemetryModels.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/RuntimeSupervisor.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiDaemonClient.swift.o",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiManagerStore.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-whole-module-optimization",
+        "-num-threads",
+        "12",
+        "-serialize-diagnostics",
+        "-O",
+        "-j12",
+        "-DSWIFT_PACKAGE",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/include/StarlinkWiFiCore-Swift.h",
+        "-swift-version",
+        "5",
+        "-enable-upcoming-feature",
+        "StrictConcurrency",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "event_horizon"
+      ],
+      "outputFileMapPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/AccessPoint.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/TelemetryModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/RuntimeSupervisor.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiDaemonClient.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiManagerStore.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/StarlinkWiFiCore.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Models/AccessPoint.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Models/TelemetryModels.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Services/RuntimeSupervisor.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Services/WiFiDaemonClient.swift",
+        "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/ViewModels/WiFiManagerStore.swift"
+      ],
+      "tempsPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build",
+      "wholeModuleOptimization" : true
+    },
+    "C.StarlinkWiFiTests-arm64-apple-macosx14.0-release.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/sources",
+      "importPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/StarlinkWiFiTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/StarlinkWiFiCore.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "StarlinkWiFiTests",
+      "moduleOutputPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/StarlinkWiFiTests.swiftmodule",
+      "objects" : [
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/StarlinkWiFiTests.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-whole-module-optimization",
+        "-num-threads",
+        "12",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/index/store",
+        "-O",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j12",
+        "-DSWIFT_PACKAGE",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-swift-version",
+        "5",
+        "-enable-upcoming-feature",
+        "StrictConcurrency",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "event_horizon"
+      ],
+      "outputFileMapPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/StarlinkWiFiTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/StarlinkWiFiTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/StarlinkWiFiTests.swift"
+      ],
+      "tempsPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build",
+      "wholeModuleOptimization" : true
+    },
+    "C.UniversalWiFiManagerPackageTests-arm64-apple-macosx14.0-release.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/sources",
+      "importPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.derived/runner.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/StarlinkWiFiTests.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "UniversalWiFiManagerPackageTests",
+      "moduleOutputPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/UniversalWiFiManagerPackageTests.swiftmodule",
+      "objects" : [
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/runner.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-whole-module-optimization",
+        "-num-threads",
+        "12",
+        "-serialize-diagnostics",
+        "-O",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j12",
+        "-DSWIFT_PACKAGE",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/include/UniversalWiFiManagerPackageTests-Swift.h",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "event_horizon"
+      ],
+      "outputFileMapPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/runner.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules/UniversalWiFiManagerPackageTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.derived/runner.swift"
+      ],
+      "tempsPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build",
+      "wholeModuleOptimization" : true
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "StarlinkWiFiApp" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "StarlinkWiFiApp",
+      "-package-name",
+      "event_horizon",
+      "-c",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/StarlinkWiFiApp.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/ConnectHotspotSheet.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/DeviceManagementCard.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/DeviceSettingsView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/EndpointListView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/FirmwareUpdatesView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/HardwareMappingView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LinkPortSidebarView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LiveMetricsAnalyticsView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LiveThroughputChartView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/MainDashboardView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/MenuBarPopoverView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/NetworkDiagnosticHeaderView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/NetworkMetricsView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/OverviewDashboardView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/PerDeviceDetailView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/PerDongleActionPanel.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/StarlinkTelemetryView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/USBDongleVectorView.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/WiFiDiagnosticView.swift",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/DerivedSources/resource_bundle_accessor.swift",
+      "-I",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-whole-module-optimization",
+      "-num-threads",
+      "12",
+      "-serialize-diagnostics",
+      "-O",
+      "-j12",
+      "-DSWIFT_PACKAGE",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_AVAILABLE",
+      "-module-cache-path",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "StarlinkWiFiApp_main",
+      "-swift-version",
+      "5",
+      "-enable-upcoming-feature",
+      "StrictConcurrency",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "event_horizon",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "StarlinkWiFiCore" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "StarlinkWiFiCore",
+      "-package-name",
+      "event_horizon",
+      "-c",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Models/AccessPoint.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Models/TelemetryModels.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Services/RuntimeSupervisor.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Services/WiFiDaemonClient.swift",
+      "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/ViewModels/WiFiManagerStore.swift",
+      "-I",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-whole-module-optimization",
+      "-num-threads",
+      "12",
+      "-serialize-diagnostics",
+      "-O",
+      "-j12",
+      "-DSWIFT_PACKAGE",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/include/StarlinkWiFiCore-Swift.h",
+      "-swift-version",
+      "5",
+      "-enable-upcoming-feature",
+      "StrictConcurrency",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "event_horizon",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "StarlinkWiFiTests" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "StarlinkWiFiTests",
+      "-package-name",
+      "event_horizon",
+      "-c",
+      "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/StarlinkWiFiTests.swift",
+      "-I",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-whole-module-optimization",
+      "-num-threads",
+      "12",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/index/store",
+      "-O",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j12",
+      "-DSWIFT_PACKAGE",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-swift-version",
+      "5",
+      "-enable-upcoming-feature",
+      "StrictConcurrency",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "event_horizon",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "UniversalWiFiManagerPackageTests" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "UniversalWiFiManagerPackageTests",
+      "-package-name",
+      "event_horizon",
+      "-c",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.derived/runner.swift",
+      "-I",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-whole-module-optimization",
+      "-num-threads",
+      "12",
+      "-serialize-diagnostics",
+      "-O",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j12",
+      "-DSWIFT_PACKAGE",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/include/UniversalWiFiManagerPackageTests-Swift.h",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.5.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "event_horizon",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "StarlinkWiFiApp" : [
+      "StarlinkWiFiCore"
+    ],
+    "StarlinkWiFiCore" : [
+
+    ],
+    "StarlinkWiFiTests" : [
+      "StarlinkWiFiCore"
+    ],
+    "UniversalWiFiManagerPackageTests" : [
+      "StarlinkWiFiTests",
+      "StarlinkWiFiCore"
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+    "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.derived/runner.swift" : {
+      "inputs" : [
+
+      ],
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.derived/runner.swift"
+        }
+      ]
+    }
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/StarlinkWiFiApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/ConnectHotspotSheet.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/DeviceManagementCard.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/DeviceSettingsView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/EndpointListView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/FirmwareUpdatesView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/HardwareMappingView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LinkPortSidebarView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LiveMetricsAnalyticsView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/LiveThroughputChartView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/MainDashboardView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/MenuBarPopoverView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/NetworkDiagnosticHeaderView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/NetworkMetricsView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/OverviewDashboardView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/PerDeviceDetailView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/PerDongleActionPanel.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/StarlinkTelemetryView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/USBDongleVectorView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiApp/Views/WiFiDiagnosticView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/DerivedSources/resource_bundle_accessor.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/sources"
+    },
+    "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/ConnectHotspotSheet.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/DeviceManagementCard.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/DeviceSettingsView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/EndpointListView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/FirmwareUpdatesView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/HardwareMappingView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/LinkPortSidebarView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/LiveMetricsAnalyticsView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/LiveThroughputChartView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/MainDashboardView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/MenuBarPopoverView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/NetworkDiagnosticHeaderView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/NetworkMetricsView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/OverviewDashboardView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/PerDeviceDetailView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/PerDongleActionPanel.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/StarlinkTelemetryView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/StarlinkWiFiApp.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/USBDongleVectorView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/WiFiDiagnosticView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.build/resource_bundle_accessor.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/AccessPoint.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/RuntimeSupervisor.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/TelemetryModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiDaemonClient.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiManagerStore.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiApp.product/Objects.LinkFileList"
+    },
+    "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Models/AccessPoint.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Models/TelemetryModels.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Services/RuntimeSupervisor.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Services/WiFiDaemonClient.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/ViewModels/WiFiManagerStore.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/sources"
+    },
+    "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/StarlinkWiFiTests.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/sources"
+    },
+    "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.derived/runner.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/sources"
+    },
+    "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/AccessPoint.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/RuntimeSupervisor.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/TelemetryModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiDaemonClient.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiManagerStore.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/StarlinkWiFiTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/runner.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.product/Objects.LinkFileList"
+    },
+    "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+    }
+  }
+}

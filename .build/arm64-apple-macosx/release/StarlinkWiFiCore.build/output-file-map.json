@@ -1,0 +1,37 @@
+{
+  "": {
+    "dependencies": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/StarlinkWiFiCore.d",
+    "object": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/StarlinkWiFiCore.o",
+    "swift-dependencies": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/primary.swiftdeps"
+  },
+  "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Models/AccessPoint.swift": {
+    "object": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/AccessPoint.swift.o",
+    "swiftmodule": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/AccessPoint~partial.swiftmodule",
+    "swift-dependencies": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/AccessPoint.swiftdeps",
+    "diagnostics": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/AccessPoint.dia"
+  },
+  "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Models/TelemetryModels.swift": {
+    "object": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/TelemetryModels.swift.o",
+    "swiftmodule": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/TelemetryModels~partial.swiftmodule",
+    "swift-dependencies": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/TelemetryModels.swiftdeps",
+    "diagnostics": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/TelemetryModels.dia"
+  },
+  "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Services/RuntimeSupervisor.swift": {
+    "object": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/RuntimeSupervisor.swift.o",
+    "swiftmodule": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/RuntimeSupervisor~partial.swiftmodule",
+    "swift-dependencies": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/RuntimeSupervisor.swiftdeps",
+    "diagnostics": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/RuntimeSupervisor.dia"
+  },
+  "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/Services/WiFiDaemonClient.swift": {
+    "object": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiDaemonClient.swift.o",
+    "swiftmodule": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiDaemonClient~partial.swiftmodule",
+    "swift-dependencies": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiDaemonClient.swiftdeps",
+    "diagnostics": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiDaemonClient.dia"
+  },
+  "/Users/benebsworth/projects/event-horizon/Sources/StarlinkWiFiCore/ViewModels/WiFiManagerStore.swift": {
+    "object": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiManagerStore.swift.o",
+    "swiftmodule": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiManagerStore~partial.swiftmodule",
+    "swift-dependencies": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiManagerStore.swiftdeps",
+    "diagnostics": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiCore.build/WiFiManagerStore.dia"
+  }
+}

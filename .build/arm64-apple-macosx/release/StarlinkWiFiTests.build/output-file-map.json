@@ -1,0 +1,13 @@
+{
+  "": {
+    "dependencies": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/StarlinkWiFiTests.d",
+    "object": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/StarlinkWiFiTests.o",
+    "swift-dependencies": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/primary.swiftdeps"
+  },
+  "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/StarlinkWiFiTests.swift": {
+    "object": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/StarlinkWiFiTests.swift.o",
+    "swiftmodule": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/StarlinkWiFiTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/StarlinkWiFiTests.swiftdeps",
+    "diagnostics": "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/StarlinkWiFiTests.build/StarlinkWiFiTests.dia"
+  }
+}

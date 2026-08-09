@@ -1,0 +1,3 @@
+module StarlinkWiFiCore {
+    header "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/debug/StarlinkWiFiCore.build/include/StarlinkWiFiCore-Swift.h"
+}

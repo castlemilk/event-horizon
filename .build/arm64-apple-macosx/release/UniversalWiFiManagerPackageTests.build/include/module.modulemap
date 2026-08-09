@@ -1,0 +1,3 @@
+module UniversalWiFiManagerPackageTests {
+    header "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/release/UniversalWiFiManagerPackageTests.build/include/UniversalWiFiManagerPackageTests-Swift.h"
+}

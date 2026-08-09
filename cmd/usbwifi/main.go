@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"dorja-labs/starlink-sdk/pkg/api"
-	"dorja-labs/starlink-sdk/pkg/tun"
-	"dorja-labs/starlink-sdk/pkg/usb"
-	"dorja-labs/starlink-sdk/pkg/wifi"
+	"github.com/castlemilk/event-horizon/pkg/api"
+	"github.com/castlemilk/event-horizon/pkg/tun"
+	"github.com/castlemilk/event-horizon/pkg/usb"
+	"github.com/castlemilk/event-horizon/pkg/wifi"
 )
 
 func main() {
@@ -22,7 +22,7 @@ func main() {
 	flag.Parse()
 
 	fmt.Println("================================================================")
-	fmt.Println("  📡 Apple Silicon USB Wi-Fi & Network Manager Daemon v1.0.0")
+	fmt.Println("  📡 Event Horizon USB Wi-Fi & Network Manager Daemon v1.0.0")
 	fmt.Println("================================================================")
 
 	// 1. USB Auto-Detection & ModeSwitch

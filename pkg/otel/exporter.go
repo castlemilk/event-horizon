@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"dorja-labs/starlink-sdk/pkg/netstat"
-	"dorja-labs/starlink-sdk/pkg/uptime"
+	"github.com/castlemilk/event-horizon/pkg/netstat"
+	"github.com/castlemilk/event-horizon/pkg/uptime"
 )
 
 type OTelExporter struct{}

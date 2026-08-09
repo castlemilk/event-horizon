@@ -1,4 +1,4 @@
-module dorja-labs/starlink-sdk
+module github.com/castlemilk/event-horizon
 
 go 1.22
 

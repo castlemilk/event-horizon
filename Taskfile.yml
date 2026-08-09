@@ -1,12 +1,12 @@
-# Task (taskfile.dev) command surface for Universal WiFi Manager macOS App & SDK
+# Task (taskfile.dev) command surface for Event Horizon macOS App & SDK
 version: '3'
 
 vars:
-  APP_NAME: Universal WiFi Manager
-  BUNDLE_ID: com.universalwifi.app
-  BUNDLE_DIR: build/Universal WiFi Manager.app
-  INSTALLER_PKG: build/UniversalWiFiManager-1.0.0-AppStore.pkg
-  INSTALLER_DMG: build/UniversalWiFiManager-1.0.0-macOS.dmg
+  APP_NAME: Event Horizon
+  BUNDLE_ID: com.castlemilk.eventhorizon
+  BUNDLE_DIR: build/Event Horizon.app
+  INSTALLER_PKG: build/EventHorizon-1.0.0-AppStore.pkg
+  INSTALLER_DMG: build/EventHorizon-1.0.0-macOS.dmg
   INSTALLER_IDENTITY: "3rd Party Mac Developer Installer: Ben Ebsworth"
 
 tasks:
@@ -17,7 +17,7 @@ tasks:
 
   # ── everyday dev loops & relaunch ──────────────────────────────────────
   dev:
-    desc: Build local app bundle and launch Universal WiFi Manager.app
+    desc: Build local app bundle and launch Event Horizon.app
     cmds:
       - task: build
       - open "{{.BUNDLE_DIR}}"
@@ -26,6 +26,7 @@ tasks:
     desc: Kill running app/daemon, rebuild app & MCP server, and relaunch on macOS
     cmds:
       - echo "==> Killing previous usbwifi processes and macOS app..."
+      - pkill -9 -f "Event Horizon" || true
       - pkill -9 -f "Universal WiFi Manager" || true
       - pkill -9 -f "Starlink WiFi Manager" || true
       - pkill -9 -x "usbwifi" || true
@@ -35,7 +36,7 @@ tasks:
       - task: build
       - echo "==> Relaunching {{.BUNDLE_DIR}}..."
       - open "{{.BUNDLE_DIR}}"
-      - echo "SUCCESS Relaunched Universal WiFi Manager!"
+      - echo "SUCCESS Relaunched Event Horizon!"
 
   run:
     desc: Alias for relaunch workflow
@@ -52,7 +53,7 @@ tasks:
     desc: Compile Model Context Protocol (MCP) Server binary for AI agents
     cmds:
       - echo "==> Compiling usbwifi-mcp server..."
-      - go build -o bin/usbwifi-mcp ./cmd/usbwifi-mcp
+      - go build -buildvcs=false -o bin/usbwifi-mcp ./cmd/usbwifi-mcp
       - echo "SUCCESS Compiled bin/usbwifi-mcp"
 
   build:

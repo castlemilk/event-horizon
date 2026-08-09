@@ -36,15 +36,24 @@ public struct LinkPortSidebarView: View {
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(LinearGradient(colors: [Color.blue, Color.cyan], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 28, height: 28)
-                    Image(systemName: "antenna.radiowaves.left.and.right")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
+                        .fill(Color.black)
+                        .frame(width: 32, height: 32)
+                    if let imagePath = Bundle.module.path(forResource: "blackhole_logo", ofType: "jpg"),
+                       let nsImage = NSImage(contentsOfFile: imagePath) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .frame(width: 32, height: 32)
+                    } else {
+                        Image(systemName: "circle.circle.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.cyan)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("LinkPort")
+                    Text("Event Horizon")
                         .font(.headline.weight(.bold))
                     Text("USB Network Suite")
                         .font(.system(size: 9, weight: .medium))
