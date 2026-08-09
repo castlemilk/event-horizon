@@ -44,6 +44,7 @@ public final class WiFiManagerStore {
     public var isConnecting = false
     public var statusMessage = "Daemon Ready"
     public var isDaemonConnected = true
+    public var selectedInterface: String = "en0"
     public var starlinkDishReachable = false
     public var starlinkPingMs: Int = 18
 
@@ -132,6 +133,11 @@ public final class WiFiManagerStore {
             self.statusMessage = "Connection failed: \(error.localizedDescription)"
         }
         isConnecting = false
+    }
+
+    public func selectDeviceInterface(_ iface: String) {
+        self.selectedInterface = iface
+        self.statusMessage = "Targeting interface '\(iface)'"
     }
 
     private func checkStarlinkDishTelemetry() {

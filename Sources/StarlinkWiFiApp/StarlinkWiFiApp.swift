@@ -6,7 +6,7 @@ struct StarlinkWiFiApp: App {
     @State private var store = WiFiManagerStore()
 
     var body: some Scene {
-        WindowGroup("USB WiFi Dashboard", id: "dashboard") {
+        WindowGroup("Event Horizon", id: "dashboard") {
             MainDashboardView(store: store)
         }
         .windowStyle(.titleBar)
