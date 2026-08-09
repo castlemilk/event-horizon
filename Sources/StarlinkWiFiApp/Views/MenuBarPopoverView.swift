@@ -292,7 +292,7 @@ public struct MenuBarPopoverView: View {
         .frame(width: 330)
     }
 
-    private func signalIcon(for rssi: Int) -> String {
+    private func signalIcon(for rssi: Int8) -> String {
         if rssi > -55 {
             return "wifi"
         } else if rssi > -70 {
