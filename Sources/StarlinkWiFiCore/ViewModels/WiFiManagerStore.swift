@@ -135,9 +135,37 @@ public final class WiFiManagerStore {
         isConnecting = false
     }
 
+    public var activeHotspotForSelectedInterface: AccessPoint {
+        if let node = topologyNodes.first(where: { $0.bsdInterface == selectedInterface }) {
+            let ssid = node.networkTarget.isEmpty ? "CNH Starlink" : node.networkTarget
+            return AccessPoint(
+                ssid: ssid,
+                bssid: node.macAddress.isEmpty ? "00:13:02:8f:9a:11" : node.macAddress,
+                rssi: selectedInterface == "en0" ? -42 : (selectedInterface == "en14" ? -56 : -65),
+                channel: selectedInterface == "en0" ? 36 : 6,
+                security: selectedInterface == "en0" ? "WPA3 Personal" : (selectedInterface == "en14" ? "WPA2-PSK" : "Enterprise"),
+                isSelected: true
+            )
+        }
+        return selectedHotspot ?? AccessPoint(ssid: "CNH Starlink", bssid: "00:13:02:8f:9a:11", rssi: -50, channel: 6, security: "WPA2-PSK", isSelected: true)
+    }
+
     public func selectDeviceInterface(_ iface: String) {
         self.selectedInterface = iface
-        self.statusMessage = "Targeting interface '\(iface)'"
+        if let node = topologyNodes.first(where: { $0.bsdInterface == iface }) {
+            let targetSSID = node.networkTarget.isEmpty ? "CNH Starlink" : node.networkTarget
+            self.selectedHotspot = AccessPoint(
+                ssid: targetSSID,
+                bssid: node.macAddress,
+                rssi: iface == "en0" ? -42 : -56,
+                channel: iface == "en0" ? 36 : 6,
+                security: iface == "en0" ? "WPA3 Personal" : "WPA2-PSK",
+                isSelected: true
+            )
+            self.statusMessage = "Targeting \(node.usbDriver) (\(iface)) • Connected to \(targetSSID)"
+        } else {
+            self.statusMessage = "Targeting interface '\(iface)'"
+        }
     }
 
     private func checkStarlinkDishTelemetry() {

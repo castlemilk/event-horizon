@@ -80,6 +80,44 @@ public struct MenuBarPopoverView: View {
                 }
             }
 
+            // Active Connection Card for Currently Selected Interface
+            let activeAP = store.activeHotspotForSelectedInterface
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Text("ACTIVE NETWORK (\(store.selectedInterface))")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(activeAP.security)
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.green)
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "wifi")
+                        .font(.title3)
+                        .foregroundStyle(.green)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(activeAP.ssid)
+                            .font(.body.weight(.bold))
+                        Text("\(activeAP.bssid) • \(activeAP.rssi) dBm • Ch \(activeAP.channel)")
+                            .font(.system(size: 9).monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.title3)
+                        .foregroundStyle(.green)
+                }
+            }
+            .padding(10)
+            .background(Color.green.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.3), lineWidth: 1))
+
             Divider()
 
             // Quick-Action Section 1: Select Active Hardware Device
@@ -156,7 +194,7 @@ public struct MenuBarPopoverView: View {
 
                 VStack(spacing: 4) {
                     ForEach(store.hotspots.prefix(5)) { ap in
-                        let isSelected = ap.isSelected || store.selectedHotspot?.ssid == ap.ssid
+                        let isSelected = ap.ssid == activeAP.ssid
                         HStack(spacing: 8) {
                             Image(systemName: signalIcon(for: ap.rssi))
                                 .font(.caption)
