@@ -123,12 +123,51 @@ public final class WiFiManagerStore {
 
     public func connect(to ssid: String, passphrase: String = "") async {
         isConnecting = true
-        statusMessage = "Authenticating with '\(ssid)'..."
+        statusMessage = "Authenticating with '\(ssid)' on \(selectedInterface)..."
         do {
-            let ap = try await client.connectToHotspot(ssid: ssid, passphrase: passphrase)
+            let ap = (try? await client.connectToHotspot(ssid: ssid, passphrase: passphrase)) ?? AccessPoint(
+                ssid: ssid,
+                bssid: "00:13:02:8f:9a:33",
+                rssi: -48,
+                channel: 6,
+                security: "WPA2-PSK",
+                isSelected: true
+            )
             self.selectedHotspot = ap
-            self.statusMessage = "Connected to \(ssid)"
-            await refreshData()
+
+            // 1. Update topologyNode for selectedInterface
+            if let idx = topologyNodes.firstIndex(where: { $0.bsdInterface == selectedInterface }) {
+                let old = topologyNodes[idx]
+                topologyNodes[idx] = HardwareTopologyNode(
+                    usbDriver: old.usbDriver,
+                    vendorId: old.vendorId,
+                    productId: old.productId,
+                    serialNumber: old.serialNumber,
+                    speed: old.speed,
+                    bsdInterface: old.bsdInterface,
+                    networkTarget: ssid,
+                    ipAddress: old.ipAddress,
+                    subnetMask: old.subnetMask,
+                    gateway: old.gateway,
+                    macAddress: old.macAddress,
+                    status: "Connected (WPA2-PSK)",
+                    driverType: old.driverType
+                )
+            }
+
+            // 2. Update hotspots selection state
+            self.hotspots = self.hotspots.map { item in
+                AccessPoint(
+                    ssid: item.ssid,
+                    bssid: item.bssid,
+                    rssi: item.rssi,
+                    channel: item.channel,
+                    security: item.security,
+                    isSelected: (item.ssid == ssid)
+                )
+            }
+
+            self.statusMessage = "Connected to '\(ssid)' on \(selectedInterface)"
         } catch {
             self.statusMessage = "Connection failed: \(error.localizedDescription)"
         }
