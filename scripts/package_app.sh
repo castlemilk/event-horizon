@@ -35,7 +35,7 @@ chmod +x bin/usbwifi
 
 # Bundle libusb dynamic library inside Contents/Frameworks for Sandbox & Gatekeeper compliance
 if [ -f "/opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib" ]; then
-    cp "/opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib" "${FRAMEWORKS_DIR}/libusb-1.0.0.dylib"
+    cp -f "/opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib" "${FRAMEWORKS_DIR}/libusb-1.0.0.dylib"
     chmod 755 "${FRAMEWORKS_DIR}/libusb-1.0.0.dylib"
     install_name_tool -id "@executable_path/../Frameworks/libusb-1.0.0.dylib" "${FRAMEWORKS_DIR}/libusb-1.0.0.dylib" 2>/dev/null || true
     install_name_tool -change "/opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib" "@executable_path/../Frameworks/libusb-1.0.0.dylib" "${RESOURCES_DIR}/usbwifi" 2>/dev/null || true

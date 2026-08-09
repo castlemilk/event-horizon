@@ -125,14 +125,7 @@ public final class WiFiManagerStore {
         isConnecting = true
         statusMessage = "Authenticating with '\(ssid)' on \(selectedInterface)..."
         do {
-            let ap = (try? await client.connectToHotspot(ssid: ssid, passphrase: passphrase)) ?? AccessPoint(
-                ssid: ssid,
-                bssid: "00:13:02:8f:9a:33",
-                rssi: -48,
-                channel: 6,
-                security: "WPA2-PSK",
-                isSelected: true
-            )
+            let ap = try await client.connectToHotspot(ssid: ssid, passphrase: passphrase)
             self.selectedHotspot = ap
 
             // 1. Update topologyNode for selectedInterface
