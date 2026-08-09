@@ -30,6 +30,35 @@ public struct LinkPortSidebarView: View {
         self._selection = selection
     }
 
+    private func safeLoadBlackholeLogo() -> NSImage? {
+        let fileManager = FileManager.default
+
+        // 1. Check direct main bundle resources
+        if let mainResPath = Bundle.main.path(forResource: "blackhole_logo", ofType: "jpg") {
+            return NSImage(contentsOfFile: mainResPath)
+        }
+
+        // 2. Check Contents/Resources/blackhole_logo.jpg inside app bundle
+        let bundlePath = Bundle.main.bundlePath
+        let resPath = (bundlePath as NSString).appendingPathComponent("Contents/Resources/blackhole_logo.jpg")
+        if fileManager.fileExists(atPath: resPath) {
+            return NSImage(contentsOfFile: resPath)
+        }
+
+        // 3. Check inside resource bundle if packaged
+        let subBundlePath = (bundlePath as NSString).appendingPathComponent("Contents/Resources/UniversalWiFiManager_StarlinkWiFiApp.bundle/blackhole_logo.jpg")
+        if fileManager.fileExists(atPath: subBundlePath) {
+            return NSImage(contentsOfFile: subBundlePath)
+        }
+
+        // 4. Fallback relative path for local development
+        if fileManager.fileExists(atPath: "Sources/StarlinkWiFiApp/Resources/blackhole_logo.jpg") {
+            return NSImage(contentsOfFile: "Sources/StarlinkWiFiApp/Resources/blackhole_logo.jpg")
+        }
+
+        return nil
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             // Brand Title Bar
@@ -38,17 +67,24 @@ public struct LinkPortSidebarView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.black)
                         .frame(width: 32, height: 32)
-                    if let imagePath = Bundle.module.path(forResource: "blackhole_logo", ofType: "jpg"),
-                       let nsImage = NSImage(contentsOfFile: imagePath) {
+                    
+                    if let nsImage = safeLoadBlackholeLogo() {
                         Image(nsImage: nsImage)
                             .resizable()
-                            .scaledToFit()
+                            .scaledToFill()
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .frame(width: 32, height: 32)
                     } else {
-                        Image(systemName: "circle.circle.fill")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.cyan)
+                        ZStack {
+                            Circle()
+                                .fill(LinearGradient(colors: [.purple, .blue, .black], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            Circle()
+                                .stroke(Color.cyan, lineWidth: 1.5)
+                            Circle()
+                                .fill(Color.black)
+                                .scaleEffect(0.4)
+                        }
+                        .frame(width: 28, height: 28)
                     }
                 }
 

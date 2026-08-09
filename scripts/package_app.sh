@@ -60,6 +60,7 @@ for b in "${SHOW_PATH}"/*.bundle; do
         cp -R "$b" "${RESOURCES_DIR}/"
     fi
 done
+cp Sources/StarlinkWiFiApp/Resources/blackhole_logo.jpg "${RESOURCES_DIR}/blackhole_logo.jpg" 2>/dev/null || true
 
 # 3. Copy Plist and Entitlements
 echo "⚙️ [3/5] Assembling Bundle Structure & Info.plist..."
