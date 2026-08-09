@@ -170,12 +170,13 @@ public final class WiFiManagerStore {
     public var activeHotspotForSelectedInterface: AccessPoint {
         if let node = topologyNodes.first(where: { $0.bsdInterface == selectedInterface }) {
             let ssid = node.networkTarget.isEmpty ? "CNH Starlink" : node.networkTarget
+            let isWired = node.usbDriver.contains("Ethernet") || node.usbDriver.contains("RTL8156")
             return AccessPoint(
                 ssid: ssid,
                 bssid: node.macAddress.isEmpty ? "00:13:02:8f:9a:11" : node.macAddress,
-                rssi: selectedInterface == "en0" ? -42 : (selectedInterface == "en14" ? -56 : -65),
-                channel: selectedInterface == "en0" ? 36 : 6,
-                security: selectedInterface == "en0" ? "WPA3 Personal" : (selectedInterface == "en14" ? "WPA2-PSK" : "Enterprise"),
+                rssi: isWired ? 0 : (selectedInterface == "en0" ? -42 : -56),
+                channel: isWired ? 0 : (selectedInterface == "en0" ? 36 : 6),
+                security: isWired ? "2.5G Ethernet" : (selectedInterface == "en0" ? "WPA3 Personal" : "WPA2-PSK"),
                 isSelected: true
             )
         }

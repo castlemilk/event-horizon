@@ -82,28 +82,37 @@ public struct MenuBarPopoverView: View {
 
             // Active Connection Card for Currently Selected Interface
             let activeAP = store.activeHotspotForSelectedInterface
+            let selectedNode = store.topologyNodes.first(where: { $0.bsdInterface == store.selectedInterface })
+            let isWired = selectedNode?.usbDriver.contains("Ethernet") == true || selectedNode?.usbDriver.contains("RTL8156") == true
+
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
-                    Text("ACTIVE NETWORK (\(store.selectedInterface))")
+                    Text(isWired ? "ACTIVE WIRED LINK (\(store.selectedInterface))" : "ACTIVE NETWORK (\(store.selectedInterface))")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text(activeAP.security)
+                    Text(isWired ? "2.5G WIRED LINK" : activeAP.security)
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(.green)
                 }
 
                 HStack(spacing: 8) {
-                    Image(systemName: "wifi")
+                    Image(systemName: isWired ? "cable.connector" : "wifi")
                         .font(.title3)
                         .foregroundStyle(.green)
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(activeAP.ssid)
                             .font(.body.weight(.bold))
-                        Text("\(activeAP.bssid) • \(activeAP.rssi) dBm • Ch \(activeAP.channel)")
-                            .font(.system(size: 9).monospaced())
-                            .foregroundStyle(.secondary)
+                        if isWired {
+                            Text("\(activeAP.bssid) • 2.5 Gbps Full-Duplex")
+                                .font(.system(size: 9).monospaced())
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("\(activeAP.bssid) • \(activeAP.rssi) dBm • Ch \(activeAP.channel)")
+                                .font(.system(size: 9).monospaced())
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     Spacer()
@@ -139,7 +148,7 @@ public struct MenuBarPopoverView: View {
                             store.selectDeviceInterface(node.bsdInterface)
                         }) {
                             HStack(spacing: 8) {
-                                Image(systemName: node.bsdInterface.contains("en0") ? "laptopcomputer" : "antenna.radiowaves.left.and.right")
+                                Image(systemName: node.bsdInterface.contains("en0") ? "laptopcomputer" : ((node.usbDriver.contains("Ethernet") || node.usbDriver.contains("RTL8156")) ? "cable.connector" : "antenna.radiowaves.left.and.right"))
                                     .font(.caption)
                                     .foregroundStyle(isSelected ? Color.blue : Color.secondary)
 

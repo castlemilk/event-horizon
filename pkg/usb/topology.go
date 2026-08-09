@@ -33,6 +33,7 @@ func GetHardwareTopology() []HardwareTopology {
 			ProductID:     "0x8D80",
 			SerialNumber:  "0113000001",
 			Speed:         "USB 2.0 High-Speed (480 Mbps)",
+			BSDInterface:  "utun4",
 			NetworkTarget: "CNH Starlink",
 			IPAddress:     "192.168.1.105",
 			SubnetMask:    "255.255.255.0",
