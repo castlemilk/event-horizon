@@ -1,0 +1,92 @@
+# Task (taskfile.dev) command surface for Universal WiFi Manager macOS App & SDK
+version: '3'
+
+vars:
+  APP_NAME: Universal WiFi Manager
+  BUNDLE_ID: com.universalwifi.app
+  BUNDLE_DIR: build/Universal WiFi Manager.app
+  INSTALLER_PKG: build/UniversalWiFiManager-1.0.0-AppStore.pkg
+  INSTALLER_DMG: build/UniversalWiFiManager-1.0.0-macOS.dmg
+  INSTALLER_IDENTITY: "3rd Party Mac Developer Installer: Ben Ebsworth"
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task --list
+
+  # ── everyday dev loops & relaunch ──────────────────────────────────────
+  dev:
+    desc: Build local app bundle and launch Universal WiFi Manager.app
+    cmds:
+      - task: build
+      - open "{{.BUNDLE_DIR}}"
+
+  relaunch:
+    desc: Kill running app/daemon, rebuild app & MCP server, and relaunch on macOS
+    cmds:
+      - echo "==> Killing previous usbwifi processes and macOS app..."
+      - pkill -9 -f "Universal WiFi Manager" || true
+      - pkill -9 -f "Starlink WiFi Manager" || true
+      - pkill -9 -x "usbwifi" || true
+      - pkill -9 -x "usbwifi-mcp" || true
+      - killall -9 swift-build swift-frontend 2>/dev/null || true
+      - lsof -ti :8990 | xargs kill -9 || true
+      - task: build
+      - echo "==> Relaunching {{.BUNDLE_DIR}}..."
+      - open "{{.BUNDLE_DIR}}"
+      - echo "SUCCESS Relaunched Universal WiFi Manager!"
+
+  run:
+    desc: Alias for relaunch workflow
+    cmds:
+      - task: relaunch
+
+  test:
+    desc: Run Go & Swift unit test suites
+    cmds:
+      - go test ./...
+      - swift test
+
+  build:mcp:
+    desc: Compile Model Context Protocol (MCP) Server binary for AI agents
+    cmds:
+      - echo "==> Compiling usbwifi-mcp server..."
+      - go build -o bin/usbwifi-mcp ./cmd/usbwifi-mcp
+      - echo "SUCCESS Compiled bin/usbwifi-mcp"
+
+  build:
+    desc: Build macOS App Bundle and Distribution PKG/DMG
+    deps: [build:mcp]
+    cmds:
+      - ./scripts/package_app.sh
+
+  check:
+    desc: Full pre-push quality gate — unit tests and app packaging
+    cmds:
+      - task: test
+      - task: build
+
+  # ── release & distribution entrypoints ─────────────────────────────────
+  release:dmg:
+    desc: Build direct distribution DMG installer
+    cmds:
+      - task: build
+      - echo "==> Packaging {{.INSTALLER_DMG}} installer..."
+      - hdiutil create -volname "{{.APP_NAME}}" -srcfolder "{{.BUNDLE_DIR}}" -ov -format UDZO "{{.INSTALLER_DMG}}"
+      - echo "SUCCESS Created {{.INSTALLER_DMG}}"
+
+  release:mas:
+    desc: Build PKG installer package for Mac App Store submission
+    cmds:
+      - task: build
+      - echo "==> Preparing Mac App Store installer package..."
+      - productbuild --component "{{.BUNDLE_DIR}}" /Applications "{{.INSTALLER_PKG}}" || true
+      - echo "SUCCESS Created {{.INSTALLER_PKG}}"
+
+  release:all:
+    desc: Complete end-to-end release pipeline (Build -> DMG -> App Store PKG)
+    cmds:
+      - task: test
+      - task: release:dmg
+      - task: release:mas

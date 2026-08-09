@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "usbwifi": {
+      "command": "/Users/benebsworth/projects/starlink-sdk/bin/usbwifi-mcp",
+      "args": [],
+      "env": {
+        "DAEMON_URL": "http://127.0.0.1:8990"
+      }
+    }
+  }
+}
