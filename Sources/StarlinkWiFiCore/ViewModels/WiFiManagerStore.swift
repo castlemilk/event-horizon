@@ -29,7 +29,7 @@ public final class WiFiManagerStore {
             serialNumber: "USB-WLAN-8D80",
             speed: "480 Mbps HighSpeed",
             bsdInterface: "en14",
-            networkTarget: "SFH",
+            networkTarget: "CNH Starlink",
             ipAddress: "192.168.1.105",
             subnetMask: "255.255.255.0",
             gateway: "192.168.1.1",
