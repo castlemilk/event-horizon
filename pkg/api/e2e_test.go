@@ -64,9 +64,9 @@ func TestFullE2EServerSuite(t *testing.T) {
 			t.Fatalf("Failed to decode scan JSON: %v", err)
 		}
 
-		hotspots, ok := body["hotspots"].([]interface{})
+		hotspots, ok := body["data"].([]interface{})
 		if !ok || len(hotspots) == 0 {
-			t.Errorf("Expected non-empty hotspots list in scan endpoint")
+			t.Errorf("Expected non-empty hotspots list in scan endpoint data field")
 		}
 	})
 
