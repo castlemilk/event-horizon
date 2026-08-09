@@ -49,6 +49,12 @@ tasks:
       - go test ./...
       - swift test
 
+  test:e2e:
+    desc: Run end-to-end app bundle integrity verification
+    cmds:
+      - chmod +x ./scripts/verify_bundle.sh
+      - ./scripts/verify_bundle.sh
+
   build:mcp:
     desc: Compile Model Context Protocol (MCP) Server binary for AI agents
     cmds:
@@ -63,10 +69,11 @@ tasks:
       - ./scripts/package_app.sh
 
   check:
-    desc: Full pre-push quality gate — unit tests and app packaging
+    desc: Full pre-push quality gate — unit tests, app packaging, and E2E bundle verification
     cmds:
       - task: test
       - task: build
+      - task: test:e2e
 
   # ── release & distribution entrypoints ─────────────────────────────────
   release:dmg:
