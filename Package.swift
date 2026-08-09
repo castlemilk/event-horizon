@@ -37,7 +37,7 @@ let package = Package(
         ),
         .testTarget(
             name: "StarlinkWiFiTests",
-            dependencies: ["StarlinkWiFiCore"],
+            dependencies: ["StarlinkWiFiCore", "StarlinkWiFiApp"],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
             ]
