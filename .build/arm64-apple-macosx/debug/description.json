@@ -489,6 +489,10 @@
       "inputs" : [
         {
           "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/E2EBundleValidationTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/StarlinkWiFiTests.swift"
         },
         {
@@ -508,6 +512,7 @@
       "moduleName" : "StarlinkWiFiTests",
       "moduleOutputPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/debug/Modules/StarlinkWiFiTests.swiftmodule",
       "objects" : [
+        "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/debug/StarlinkWiFiTests.build/E2EBundleValidationTests.swift.o",
         "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/debug/StarlinkWiFiTests.build/StarlinkWiFiTests.swift.o"
       ],
       "otherArguments" : [
@@ -564,6 +569,10 @@
       "outputs" : [
         {
           "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/debug/StarlinkWiFiTests.build/E2EBundleValidationTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/debug/StarlinkWiFiTests.build/StarlinkWiFiTests.swift.o"
         },
         {
@@ -573,6 +582,7 @@
       ],
       "prepareForIndexing" : false,
       "sources" : [
+        "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/E2EBundleValidationTests.swift",
         "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/StarlinkWiFiTests.swift"
       ],
       "tempsPath" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/debug/StarlinkWiFiTests.build",
@@ -833,6 +843,7 @@
       "-package-name",
       "event_horizon",
       "-c",
+      "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/E2EBundleValidationTests.swift",
       "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/StarlinkWiFiTests.swift",
       "-I",
       "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/debug/Modules",
@@ -1246,6 +1257,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/E2EBundleValidationTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/benebsworth/projects/event-horizon/Tests/StarlinkWiFiTests/StarlinkWiFiTests.swift"
         }
       ],
@@ -1291,6 +1306,10 @@
         {
           "kind" : "file",
           "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/debug/StarlinkWiFiCore.build/WiFiManagerStore.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/benebsworth/projects/event-horizon/.build/arm64-apple-macosx/debug/StarlinkWiFiTests.build/E2EBundleValidationTests.swift.o"
         },
         {
           "kind" : "file",

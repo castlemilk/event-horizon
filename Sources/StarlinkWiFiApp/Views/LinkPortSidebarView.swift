@@ -1,7 +1,7 @@
 import SwiftUI
 import StarlinkWiFiCore
 
-public enum NavigationSection: String, CaseIterable, Identifiable {
+public enum NavigationSection: String, CaseIterable, Identifiable, Sendable {
     case overview = "Overview"
     case devices = "Devices"
     case wifi = "Wi-Fi"
