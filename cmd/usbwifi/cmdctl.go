@@ -45,6 +45,8 @@ func runCmdCtl(args []string) int {
 		return runCmdSend(ctx, args[1:])
 	case "listen":
 		return runCmdListen(ctx, args[1:])
+	case "probe":
+		return runCmdProbe(ctx)
 	case "help", "-h", "--help":
 		usageCmdCtl()
 		return 0
@@ -278,6 +280,79 @@ func runCmdListen(ctx context.Context, args []string) int {
 	return 0
 }
 
+// runCmdProbe is a diagnostic: dumps discovered endpoints, sniffs raw
+// bulk IN traffic, and fires MM_VERSION_REQ on each candidate OUT pipe,
+// printing everything the device sends back.
+func runCmdProbe(ctx context.Context) int {
+	s, err := openSession(ctx)
+	if err != nil {
+		log.Printf("open session: %v", err)
+		return 1
+	}
+	defer s.close()
+	d := s.sess.Device()
+	log.Printf("endpoints: bulk_in=0x%02x bulk_out=0x%02x msg_in=0x%02x msg_out=0x%02x",
+		d.BulkInEndpoint(), d.BulkOutEndpoint(), d.MsgInEndpoint(), d.MsgOutEndpoint())
+
+	// Raw RX tap in the background: every chunk received on bulk IN.
+	rawStop := make(chan struct{})
+	go func() {
+		buf := make([]byte, 512)
+		for {
+			select {
+			case <-rawStop:
+				return
+			default:
+			}
+			n, rerr := d.BulkRecv(protocolBulkIN(d), buf, 100)
+			if n > 0 {
+				m := buf[:n]
+				if len(m) > 48 {
+					m = m[:48]
+				}
+				log.Printf("RX %3d bytes: % x", n, buf[:n])
+			} else if rerr != nil {
+				select {
+				case <-rawStop:
+					return
+				default:
+				}
+			}
+		}
+	}()
+
+	msg := make([]byte, 8)
+	lmacHdr := lmac.Header{ID: lmac.MMVersionReq, DestID: uint16(lmac.TaskLast), SrcID: lmac.DRVTaskID}
+	lmacHdr.Encode(msg)
+	wrapped := lmac.WrapCommand(msg)
+
+	candidates := []struct {
+		name string
+		ep   uint8
+	}{
+		{"msg_out", d.MsgOutEndpoint()},
+		{"bulk_out", d.BulkOutEndpoint()},
+	}
+	seen := map[uint8]bool{}
+	for _, c := range candidates {
+		if seen[c.ep] {
+			continue
+		}
+		seen[c.ep] = true
+		log.Printf("sending MM_VERSION_REQ (%d bytes) on %s ep 0x%02x ...", len(wrapped), c.name, c.ep)
+		if _, err := d.BulkSend(c.ep, wrapped, 1000); err != nil {
+			log.Printf("  send failed: %v", err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+	close(rawStop)
+	log.Printf("probe done")
+	return 0
+}
+
+// protocolBulkIN returns the device's bulk IN endpoint.
+func protocolBulkIN(d *protocol.USBDevice) uint8 { return d.BulkInEndpoint() }
+
 // usageCmdCtl prints help for the cmdctl subcommand.
 func usageCmdCtl() {
 	fmt.Fprintf(os.Stderr, `cmdctl — user-space LMAC command channel for the AIC8800D80
@@ -294,5 +369,6 @@ Commands:
        --scan-duration 8s             Result collection window
        --timeout 4s                   ACK timeout
   listen [--duration 10s]             Passive tap on bulk IN config frames
+  probe                               Endpoint dump + raw RX sniff + TX retry
 `)
 }

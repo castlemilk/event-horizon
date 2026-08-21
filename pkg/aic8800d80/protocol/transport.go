@@ -230,6 +230,10 @@ func (d *USBDevice) MsgOutEndpoint() uint8 {
 	return d.bulkOut
 }
 
+// MsgInEndpoint returns the dedicated command IN endpoint (second bulk
+// IN), or 0 when the device exposes only one.
+func (d *USBDevice) MsgInEndpoint() uint8 { return d.msgIn }
+
 // Location returns the bus number and device address of the open device.
 // Used to detect true re-enumeration (address changes on every reset).
 func (d *USBDevice) Location() DeviceLocation {
