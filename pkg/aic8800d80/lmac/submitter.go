@@ -88,3 +88,16 @@ func readID(frame []byte) uint16 {
 // DefaultACKTimeout is the per-submit wait. Callers wrap Submit with their
 // own deadline.
 const DefaultACKTimeout = 4 * time.Second
+
+// AckChannel adapts a chan uint16 to AckSource.
+type AckChannel chan uint16
+
+// NextACK implements AckSource.
+func (c AckChannel) NextACK(ctx context.Context) (uint16, error) {
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case id := <-c:
+		return id, nil
+	}
+}
