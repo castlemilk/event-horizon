@@ -54,9 +54,11 @@ func OpenOperational(ctx context.Context) (*Session, error) {
 // Device returns the underlying USB device.
 func (s *Session) Device() *USBDevice { return s.dev }
 
-// BulkOut writes one frame to the bulk OUT endpoint (lmac.BulkWriter shape).
+// BulkOut writes one command frame to the dedicated msg OUT endpoint
+// (lmac.BulkWriter shape). Falls back to the data OUT endpoint when the
+// device exposes only one bulk OUT.
 func (s *Session) BulkOut(_ context.Context, frame []byte) error {
-	_, err := s.dev.BulkSend(BulkOUTEndpoint, frame, 1000)
+	_, err := s.dev.BulkSend(s.dev.MsgOutEndpoint(), frame, 1000)
 	return err
 }
 

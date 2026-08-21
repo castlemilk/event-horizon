@@ -49,7 +49,8 @@ func TestSubmitterRoundTrip(t *testing.T) {
 	if len(f.writes) != 1 {
 		t.Fatalf("writes: %d", len(f.writes))
 	}
-	got := uint16(f.writes[0][0]) | uint16(f.writes[0][1])<<8
+	// Frames are wrapped for the command pipe; the lmac_msg id sits at offset 8.
+	got := uint16(f.writes[0][8]) | uint16(f.writes[0][9])<<8
 	if got != MMVersionReq {
 		t.Fatalf("write id: 0x%04x", got)
 	}

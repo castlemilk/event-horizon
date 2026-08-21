@@ -49,6 +49,7 @@ func (s *Submitter) Submit(ctx context.Context, msg Builder) error {
 	if len(frame) < HeaderSize {
 		return &SubmitError{Kind: ErrShortFrame, MsgID: readID(frame)}
 	}
+	msgID := readID(frame)
 	// Inject a host-unique sequence number into the SrcID slot (firmware echoes
 	// it in the matching CFM; we ignore it and just match on the CFM base id).
 	s.mu.Lock()
@@ -56,18 +57,20 @@ func (s *Submitter) Submit(ctx context.Context, msg Builder) error {
 	seq := s.nextSeq
 	s.mu.Unlock()
 	binary.LittleEndian.PutUint16(frame[4:6], seq)
+	// Frame for the USB command pipe: [rec_len][0x11][pad][dummy u32] prefix.
+	frame = WrapCommand(frame)
 	if err := s.writer.BulkOut(ctx, frame); err != nil {
 		return err
 	}
 	// Wait for ACK (a CFM is the firmware's "ack" for the REQ_CFM handshake).
-	wantTask := readID(frame) & 0xFC00
+	wantTask := msgID & 0xFC00
 	for {
 		ackID, err := s.acks.NextACK(ctx)
 		if err != nil {
 			if err == context.DeadlineExceeded || err == context.Canceled {
-				return &SubmitError{Kind: ErrTimeout, MsgID: readID(frame), Cause: err}
+				return &SubmitError{Kind: ErrTimeout, MsgID: msgID, Cause: err}
 			}
-			return &SubmitError{Kind: ErrChannelClosed, MsgID: readID(frame), Cause: err}
+			return &SubmitError{Kind: ErrChannelClosed, MsgID: msgID, Cause: err}
 		}
 		// Match by task id: a REQ in TASK_MM is ACKed by a CFM in TASK_MM
 		// (REQ id N -> CFM id N+1, same task).
