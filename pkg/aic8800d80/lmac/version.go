@@ -12,7 +12,7 @@ type VersionReq struct{}
 // Encode returns the full lmac_msg (header + empty param[]).
 func (VersionReq) Encode() ([]byte, error) {
 	buf := make([]byte, HeaderSize)
-	Header{ID: MMVersionReq, DestID: uint16(TaskLast), SrcID: DRVTaskID, ParamLen: 0}.Encode(buf)
+	Header{ID: MMVersionReq, DestID: uint16(TaskMM), SrcID: DRVTaskID, ParamLen: 0}.Encode(buf)
 	return buf, nil
 }
 

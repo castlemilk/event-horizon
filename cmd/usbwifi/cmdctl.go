@@ -322,7 +322,7 @@ func runCmdProbe(ctx context.Context) int {
 	}()
 
 	msg := make([]byte, 8)
-	lmacHdr := lmac.Header{ID: lmac.MMVersionReq, DestID: uint16(lmac.TaskLast), SrcID: lmac.DRVTaskID}
+	lmacHdr := lmac.Header{ID: lmac.MMVersionReq, DestID: uint16(lmac.TaskMM), SrcID: lmac.DRVTaskID}
 	lmacHdr.Encode(msg)
 	wrapped := lmac.WrapCommand(msg)
 

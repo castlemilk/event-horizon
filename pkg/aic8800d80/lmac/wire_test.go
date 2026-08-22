@@ -11,7 +11,7 @@ import (
 func TestWrapCommandFraming(t *testing.T) {
 	// A minimal MM_VERSION_REQ lmac_msg: id=0x0004 dst=Last src=DRV len=0.
 	msg := make([]byte, HeaderSize)
-	Header{ID: MMVersionReq, DestID: uint16(TaskLast), SrcID: DRVTaskID}.Encode(msg)
+	Header{ID: MMVersionReq, DestID: uint16(TaskMM), SrcID: DRVTaskID}.Encode(msg)
 
 	got := WrapCommand(msg)
 	wantRecLen := len(msg) + 4
