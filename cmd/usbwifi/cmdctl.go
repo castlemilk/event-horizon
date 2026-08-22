@@ -90,9 +90,11 @@ func openSession(ctx context.Context) (*session, error) {
 				r.BSSID[0], r.BSSID[1], r.BSSID[2], r.BSSID[3], r.BSSID[4], r.BSSID[5])
 		},
 		OnVersion: func(c lmac.VersionCfm) {
-			fmt.Printf("  firmware version : %s\n", c.VersionString)
-			fmt.Printf("  version=0x%08x mac=0x%08x build_id=0x%08x date=%d\n",
-				c.Version, c.MacVersion, c.FwBuildID, c.FwBuildDate)
+			fmt.Printf("  firmware version : %s (lmac=0x%08x)\n", c.VersionString, c.VersionLMAC)
+			fmt.Printf("  machw: 0x%08x / 0x%08x | phy: 0x%08x / 0x%08x\n",
+				c.VersionMacHW1, c.VersionMacHW2, c.VersionPHY1, c.VersionPHY2)
+			fmt.Printf("  features=0x%08x max_sta=%d max_vif=%d\n",
+				c.Features, c.MaxStaNb, c.MaxVifNb)
 		},
 		OnAnyUnknown: func(msgID uint16, _ []byte) {
 			log.Printf("unhandled msg id 0x%04x", msgID)

@@ -49,13 +49,13 @@ func TestDispatchRoutesVersionCfm(t *testing.T) {
 		got = c
 		seen = true
 	}}
-	// VersionCfm payload: u32 version + u32 mac + u32 build + u32 date + string.
+	// VersionCfm payload: struct mm_version_cfm (28 bytes).
 	payload := []byte{
-		0x01, 0x00, 0x00, 0x00, // version
-		0x02, 0x00, 0x00, 0x00, // mac_version
-		0x03, 0x00, 0x00, 0x00, // fw_build_id
-		0x04, 0x00, 0x00, 0x00, // fw_build_date
-		'r', 'e', 'v', 0x00, // version string "rev"
+		0xa9, 0x53, 0x13, 0x1a, // version_lmac: 0x1a1353a9 -> "26.19.83.169"
+		0x00, 0x01, 0x09, 0x06, // version_machw_1
+		0xfb, 0xfd, 0x02, 0x00, // version_machw_2
+		0x47, 0x40, 0x01, 0x00, // version_phy_1
+		0x11, 0x41, 0xe2, 0x5e, // version_phy_2
 	}
 	if err := d.Handle(context.Background(), lmac.MMVersionCfm, payload); err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestDispatchRoutesVersionCfm(t *testing.T) {
 	if !seen {
 		t.Fatal("OnVersion not called")
 	}
-	if got.VersionString != "rev" {
+	if got.VersionString != "26.19.83.169" {
 		t.Errorf("version string: %q", got.VersionString)
 	}
 }

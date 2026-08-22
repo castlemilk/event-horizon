@@ -20,34 +20,49 @@ func TestVersionReqEmptyPayload(t *testing.T) {
 }
 
 func TestVersionCfmDecode(t *testing.T) {
-	// Layout: u32 version + u32 mac_version + u32 fw_build_id + u32 fw_build_date
-	//         + NUL-terminated version string (padded).
+	// Layout: u32 version_lmac + u32 version_machw_1 + u32 version_machw_2 + u32 version_phy_1
+	//         + u32 version_phy_2 + u32 features + u16 max_sta_nb + u8 max_vif_nb (+ padding)
 	payload := []byte{
-		0x01, 0x02, 0x03, 0x04, // version
-		0x05, 0x06, 0x07, 0x08, // mac_version
-		0x09, 0x0A, 0x0B, 0x0C, // fw_build_id
-		0x0D, 0x0E, 0x0F, 0x10, // fw_build_date
-		// version string "1.2.3" + NUL padding
-		'1', '.', '2', '.', '3', 0x00, 0x00, 0x00,
+		0xa9, 0x53, 0x13, 0x1a, // version_lmac: 0x1a1353a9 -> 26.19.83.169
+		0x00, 0x01, 0x09, 0x06, // version_machw_1: 0x06090100
+		0xfb, 0xfd, 0x02, 0x00, // version_machw_2: 0x0002fdfb
+		0x47, 0x40, 0x01, 0x00, // version_phy_1: 0x00014047
+		0x11, 0x41, 0xe2, 0x5e, // version_phy_2: 0x5ee24111
+		0x00, 0x00, 0x02, 0x01, // features: 0x01020000
+		0xd5, 0x77, // max_sta_nb: 0x77d5
+		0xe8,       // max_vif_nb: 0xe8
+		0x01,       // padding
 	}
 	var cfm VersionCfm
 	if err := cfm.Decode(payload); err != nil {
 		t.Fatal(err)
 	}
-	if cfm.Version != 0x04030201 {
-		t.Errorf("version: got 0x%08x", cfm.Version)
+	if cfm.VersionLMAC != 0x1a1353a9 {
+		t.Errorf("version_lmac: got 0x%08x", cfm.VersionLMAC)
 	}
-	if cfm.MacVersion != 0x08070605 {
-		t.Errorf("mac_version: got 0x%08x", cfm.MacVersion)
+	if cfm.VersionMacHW1 != 0x06090100 {
+		t.Errorf("version_machw_1: got 0x%08x", cfm.VersionMacHW1)
 	}
-	if cfm.FwBuildID != 0x0C0B0A09 {
-		t.Errorf("fw_build_id: got 0x%08x", cfm.FwBuildID)
+	if cfm.VersionMacHW2 != 0x0002fdfb {
+		t.Errorf("version_machw_2: got 0x%08x", cfm.VersionMacHW2)
 	}
-	if cfm.FwBuildDate != 0x100F0E0D {
-		t.Errorf("fw_build_date: got 0x%08x", cfm.FwBuildDate)
+	if cfm.VersionPHY1 != 0x00014047 {
+		t.Errorf("version_phy_1: got 0x%08x", cfm.VersionPHY1)
 	}
-	if cfm.VersionString != "1.2.3" {
-		t.Errorf("version string: %q", cfm.VersionString)
+	if cfm.VersionPHY2 != 0x5ee24111 {
+		t.Errorf("version_phy_2: got 0x%08x", cfm.VersionPHY2)
+	}
+	if cfm.Features != 0x01020000 {
+		t.Errorf("features: got 0x%08x", cfm.Features)
+	}
+	if cfm.MaxStaNb != 0x77d5 {
+		t.Errorf("max_sta_nb: got 0x%04x", cfm.MaxStaNb)
+	}
+	if cfm.MaxVifNb != 0xe8 {
+		t.Errorf("max_vif_nb: got 0x%02x", cfm.MaxVifNb)
+	}
+	if cfm.VersionString != "26.19.83.169" {
+		t.Errorf("version string: got %q, expected %q", cfm.VersionString, "26.19.83.169")
 	}
 }
 
