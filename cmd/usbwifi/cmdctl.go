@@ -309,6 +309,8 @@ func runCmdProbe(ctx context.Context) int {
 
 	// Raw RX tap in the background: every chunk received on bulk IN.
 	rawStop := make(chan struct{})
+	var rxBytes int
+	errCounts := map[string]int{}
 	go func() {
 		buf := make([]byte, 512)
 		for {
@@ -317,18 +319,14 @@ func runCmdProbe(ctx context.Context) int {
 				return
 			default:
 			}
-			n, rerr := d.BulkRecv(protocolBulkIN(d), buf, 100)
+			n, rerr := d.BulkRecv(d.BulkInEndpoint(), buf, 100)
 			if n > 0 {
-				m := buf[:n]
-				if len(m) > 48 {
-					m = m[:48]
-				}
+				rxBytes += n
 				log.Printf("RX %3d bytes: % x", n, buf[:n])
 			} else if rerr != nil {
-				select {
-				case <-rawStop:
-					return
-				default:
+				msg := rerr.Error()
+				if msg != "bulk IN 0x84: LIBUSB_ERROR_TIMEOUT [Other]" && !strings.Contains(msg, "TIMEOUT") {
+					errCounts[msg]++
 				}
 			}
 		}
@@ -339,27 +337,27 @@ func runCmdProbe(ctx context.Context) int {
 	lmacHdr.Encode(msg)
 	wrapped := lmac.WrapCommand(msg)
 
-	candidates := []struct {
-		name string
-		ep   uint8
-	}{
-		{"msg_out", d.MsgOutEndpoint()},
-		{"bulk_out", d.BulkOutEndpoint()},
+	// Mirror Linux init order: reset precedes version.
+	reset := make([]byte, 8)
+	lmac.Header{ID: lmac.MMResetReq, DestID: uint16(lmac.TaskMM), SrcID: lmac.DRVTaskID}.Encode(reset)
+	wrappedReset := lmac.WrapCommand(reset)
+
+	ep := d.MsgOutEndpoint()
+	log.Printf("sending MM_RESET_REQ (%d bytes) on ep 0x%02x ...", len(wrappedReset), ep)
+	if _, err := d.BulkSend(ep, wrappedReset, 1000); err != nil {
+		log.Printf("  reset send failed: %v", err)
 	}
-	seen := map[uint8]bool{}
-	for _, c := range candidates {
-		if seen[c.ep] {
-			continue
-		}
-		seen[c.ep] = true
-		log.Printf("sending MM_VERSION_REQ (%d bytes) on %s ep 0x%02x ...", len(wrapped), c.name, c.ep)
-		if _, err := d.BulkSend(c.ep, wrapped, 1000); err != nil {
-			log.Printf("  send failed: %v", err)
-		}
-		time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
+	log.Printf("sending MM_VERSION_REQ (%d bytes) on ep 0x%02x ...", len(wrapped), ep)
+	if _, err := d.BulkSend(ep, wrapped, 1000); err != nil {
+		log.Printf("  send failed: %v", err)
 	}
+	time.Sleep(2 * time.Second)
 	close(rawStop)
-	log.Printf("probe done")
+	log.Printf("probe done: %d RX bytes total", rxBytes)
+	for m, c := range errCounts {
+		log.Printf("read errors (%dx): %s", c, m)
+	}
 	return 0
 }
 
