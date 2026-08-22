@@ -6,6 +6,7 @@ package protocol
 #include <libusb-1.0/libusb.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 static libusb_device* dev_at(libusb_device **list, ssize_t i) {
 	return list[i];
@@ -132,7 +133,6 @@ static int dump_config(struct libusb_config_descriptor *cfg, char *buf, int cap)
     return off;
 }
 */
-
 import "C"
 import (
 	"fmt"
