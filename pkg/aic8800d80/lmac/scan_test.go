@@ -8,11 +8,11 @@ import (
 
 func TestScanStartReqEncode(t *testing.T) {
 	req := ScanStartReq{
-		Band:       Band2G,
-		Channels:   []ChannelInfo{{Prim20Ch: 1, Center1: 1, Center2: 0, Width: ChanWidth20}},
-		SSIDs:      []string{"foo", "bar"},
-		BSSID:      BroadcastBSSID,
-		ProbeDelay: 10,
+		Band:     Band2G,
+		Channels: []ChannelInfo{{Prim20Ch: 1, Center1: 1, Center2: 0, Width: ChanWidth20}},
+		SSIDs:    []string{"foo", "bar"},
+		BSSID:    BroadcastBSSID,
+		Duration: 1000,
 	}
 	buf, err := req.Encode()
 	if err != nil {
@@ -57,7 +57,7 @@ func TestScanStartReqTooManyChannels(t *testing.T) {
 func TestScanStartReqTooManySSIDs(t *testing.T) {
 	req := &ScanStartReq{
 		Band:  Band2G,
-		SSIDs: []string{"a", "b", "c"},
+		SSIDs: []string{"a", "b", "c", "d"},
 	}
 	if _, err := req.Encode(); err == nil {
 		t.Fatal("expected too-many-ssids error")

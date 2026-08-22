@@ -25,8 +25,9 @@ const (
 var BroadcastBSSID = [6]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 
 const (
-	MaxChannelsInReq = 16 // SCANU_START_REQ channel array limit
-	MaxSSIDsInReq    = 2  // SCANU_START_REQ SSID array limit
+	MaxChannelsInReq = 42 // SCAN_CHANNEL_MAX in lmac_msg.h (14 2.4G + 28 5G)
+	MaxSSIDsInReq    = 3  // SCAN_SSID_MAX in lmac_msg.h
+	ScanReqSize      = 376
 )
 
 // ChannelInfo mirrors struct scan_chan_info.
@@ -37,28 +38,60 @@ type ChannelInfo struct {
 	Width    uint8
 }
 
-// ScanStartReq mirrors struct scanu_start_req.
+// ChannelFreq calculates the center frequency in MHz for a given Wi-Fi channel.
+func ChannelFreq(band uint8, ch uint8) uint16 {
+	if band == Band2G {
+		if ch == 14 {
+			return 2484
+		}
+		if ch >= 1 && ch <= 13 {
+			return 2407 + uint16(ch)*5
+		}
+		return 2412
+	}
+	if ch >= 36 {
+		return 5000 + uint16(ch)*5
+	}
+	return 5180
+}
+
+// FreqToChannel converts a MHz center frequency back to a channel number.
+func FreqToChannel(band uint8, freq uint16) uint8 {
+	if band == Band2G {
+		if freq == 2484 {
+			return 14
+		}
+		if freq >= 2412 && freq <= 2472 {
+			return uint8((freq - 2407) / 5)
+		}
+		return 1
+	}
+	if freq >= 5000 {
+		return uint8((freq - 5000) / 5)
+	}
+	return 36
+}
+
+// ScanStartReq mirrors struct scanu_start_req (lmac_msg.h).
 //
-// Layout (lmac_msg.h struct scanu_start_req):
-//   u8 band;
-//   u8 padding[3];
-//   struct mac_ssid ssid[2];   // u8 len + 31 bytes per slot
-//   u8 ssid_len[2];            // (legacy; we encode lengths in slot[0])
-//   struct scan_chan_info chan[MAX_CHANNELS]; // 4 bytes each
-//   u8 n_channels;
-//   u8 n_ssids;
-//   struct mac_addr bssid;     // 6 bytes
-//   u16 probe_delay;
-//   u32 flags;
-//
-// For simplicity in v1 we hard-code the layout. Extend if firmware disagrees.
+// Layout (376 bytes):
+//   struct mac_chan_def chan[42]; // 42 * 6 = 252 bytes
+//   struct mac_ssid ssid[3];      // 3 * 33 = 99 bytes (offset 252..350)
+//   struct mac_addr bssid;        // 6 bytes (offset 352..357, 2-byte aligned)
+//   u32_l add_ies;                // 4 bytes (offset 360..363, 4-byte aligned)
+//   u16_l add_ie_len;             // 2 bytes (offset 364..365)
+//   u8_l vif_idx;                 // 1 byte (offset 366)
+//   u8_l chan_cnt;                // 1 byte (offset 367)
+//   u8_l ssid_cnt;                // 1 byte (offset 368)
+//   bool no_cck;                  // 1 byte (offset 369)
+//   u32_l duration;               // 4 bytes (offset 372..375, 4-byte aligned)
 type ScanStartReq struct {
 	Band       uint8
 	Channels   []ChannelInfo // up to MaxChannelsInReq
 	SSIDs      []string      // up to MaxSSIDsInReq
 	BSSID      [6]byte
-	ProbeDelay uint16
-	Flags      uint32
+	VifIdx     uint8
+	Duration   uint32
 }
 
 func (r *ScanStartReq) Encode() ([]byte, error) {
@@ -68,79 +101,95 @@ func (r *ScanStartReq) Encode() ([]byte, error) {
 	if len(r.SSIDs) > MaxSSIDsInReq {
 		return nil, fmt.Errorf("scan: too many SSIDs (%d > %d)", len(r.SSIDs), MaxSSIDsInReq)
 	}
-	// Compute param length.
-	payloadLen := 4 + /*band+pad*/
-		MaxSSIDsInReq*32 + /*ssid slots*/
-		2 + /*ssid_len slot (legacy)*/
-		MaxChannelsInReq*4 + /*chan slots*/
-		1 + 1 + /*n_channels, n_ssids*/
-		6 + /*bssid*/
-		2 + /*probe_delay*/
-		4 /*flags*/
-	buf := make([]byte, HeaderSize+payloadLen)
-	Header{ID: SCANUStartReq, DestID: uint16(TaskSCANU), SrcID: DRVTaskID, ParamLen: uint16(payloadLen)}.Encode(buf)
+	buf := make([]byte, HeaderSize+ScanReqSize)
+	Header{ID: SCANUStartReq, DestID: uint16(TaskSCANU), SrcID: DRVTaskID, ParamLen: uint16(ScanReqSize)}.Encode(buf)
 	p := buf[HeaderSize:]
-	p[0] = r.Band
-	p[1], p[2], p[3] = 0, 0, 0 // pad
-	off := 4
-	// SSIDs: fixed 2 slots, each 32 bytes (mac_ssid = u8 len + 31 bytes ssid).
-	for i := 0; i < MaxSSIDsInReq; i++ {
-		slot := p[off+i*32 : off+i*32+32]
-		if i < len(r.SSIDs) {
-			s := r.SSIDs[i]
-			if len(s) > 32 {
-				return nil, fmt.Errorf("scan: ssid %q too long (%d > 32)", s, len(s))
-			}
-			slot[0] = uint8(len(s))
-			copy(slot[1:], s)
+
+	// 1. struct mac_chan_def chan[42] (42 * 6 = 252 bytes)
+	for i, ch := range r.Channels {
+		if i >= MaxChannelsInReq {
+			break
 		}
+		off := i * 6
+		freq := ChannelFreq(r.Band, ch.Prim20Ch)
+		binary.LittleEndian.PutUint16(p[off:off+2], freq)
+		p[off+2] = r.Band // band
+		p[off+3] = 0      // flags
+		p[off+4] = 20     // tx_power
+		p[off+5] = 0      // pad
 	}
-	off += MaxSSIDsInReq * 32
-	off += 2 // ssid_len slot (unused in v1; slot[0] carries lengths)
-	// Channels: fixed MAX_CHANNELS slots.
-	for i := 0; i < MaxChannelsInReq; i++ {
-		slot := p[off+i*4 : off+i*4+4]
-		if i < len(r.Channels) {
-			ch := r.Channels[i]
-			slot[0], slot[1], slot[2], slot[3] = ch.Prim20Ch, ch.Center1, ch.Center2, ch.Width
+
+	// 2. struct mac_ssid ssid[3] (3 * 33 = 99 bytes, offset 252..350)
+	for i, s := range r.SSIDs {
+		if i >= MaxSSIDsInReq {
+			break
 		}
+		off := 252 + i*33
+		if len(s) > 32 {
+			return nil, fmt.Errorf("scan: ssid %q too long (%d > 32)", s, len(s))
+		}
+		p[off] = uint8(len(s))
+		copy(p[off+1:off+33], s)
 	}
-	off += MaxChannelsInReq * 4
-	p[off] = uint8(len(r.Channels))
-	off++
-	p[off] = uint8(len(r.SSIDs))
-	off++
-	copy(p[off:off+6], r.BSSID[:])
-	off += 6
-	binary.LittleEndian.PutUint16(p[off:off+2], r.ProbeDelay)
-	off += 2
-	binary.LittleEndian.PutUint32(p[off:off+4], r.Flags)
+
+	// 3. struct mac_addr bssid (6 bytes, aligned to 2 -> offset 352)
+	copy(p[352:358], r.BSSID[:])
+
+	// 4. add_ies (u32, aligned to 4 -> offset 360)
+	binary.LittleEndian.PutUint32(p[360:364], 0)
+
+	// 5. add_ie_len (u16 -> offset 364)
+	binary.LittleEndian.PutUint16(p[364:366], 0)
+
+	// 6. vif_idx (u8 -> offset 366)
+	p[366] = r.VifIdx
+
+	// 7. chan_cnt (u8 -> offset 367)
+	p[367] = uint8(len(r.Channels))
+
+	// 8. ssid_cnt (u8 -> offset 368)
+	p[368] = uint8(len(r.SSIDs))
+
+	// 9. no_cck (bool -> offset 369)
+	p[369] = 0
+
+	// 10. duration (u32, aligned to 4 -> offset 372)
+	binary.LittleEndian.PutUint32(p[372:376], r.Duration)
+
 	return buf, nil
 }
 
 // Decode parses a SCANU_START_REQ payload back into r (for round-trip tests).
-// Field layout must match Encode.
 func (r *ScanStartReq) Decode(payload []byte) error {
-	if len(payload) < 4 {
-		return fmt.Errorf("scan start: short payload")
+	if len(payload) < ScanReqSize {
+		return fmt.Errorf("scan start: short payload (%d < %d)", len(payload), ScanReqSize)
 	}
-	r.Band = payload[0]
-	off := 4
-	r.SSIDs = r.SSIDs[:0]
-	for i := 0; i < MaxSSIDsInReq; i++ {
-		slot := payload[off+i*32 : off+i*32+32]
-		if slot[0] > 0 {
-			r.SSIDs = append(r.SSIDs, string(bytes.TrimRight(slot[1:1+slot[0]], "\x00")))
+	chanCnt := int(payload[367])
+	ssidCnt := int(payload[368])
+	r.VifIdx = payload[366]
+	r.Duration = binary.LittleEndian.Uint32(payload[372:376])
+	copy(r.BSSID[:], payload[352:358])
+
+	r.Channels = make([]ChannelInfo, 0, chanCnt)
+	for i := 0; i < chanCnt && i < MaxChannelsInReq; i++ {
+		off := i * 6
+		freq := binary.LittleEndian.Uint16(payload[off : off+2])
+		band := payload[off+2]
+		r.Band = band
+		chNum := FreqToChannel(band, freq)
+		r.Channels = append(r.Channels, ChannelInfo{Prim20Ch: chNum, Center1: chNum, Width: ChanWidth20})
+	}
+
+	r.SSIDs = make([]string, 0, ssidCnt)
+	for i := 0; i < ssidCnt && i < MaxSSIDsInReq; i++ {
+		off := 252 + i*33
+		sLen := int(payload[off])
+		if sLen > 32 {
+			sLen = 32
 		}
+		r.SSIDs = append(r.SSIDs, string(payload[off+1:off+1+sLen]))
 	}
-	off += MaxSSIDsInReq*32 + 2
-	nCh := int(payload[off+MaxChannelsInReq*4])
-	r.Channels = make([]ChannelInfo, 0, nCh)
-	for i := 0; i < nCh && i < MaxChannelsInReq; i++ {
-		slot := payload[off+i*4 : off+i*4+4]
-		r.Channels = append(r.Channels, ChannelInfo{Prim20Ch: slot[0], Center1: slot[1], Center2: slot[2], Width: slot[3]})
-	}
-	off += MaxChannelsInReq*4 + 2
+
 	return nil
 }
 
@@ -184,6 +233,25 @@ func (r *ScanResultInd) Decode(payload []byte) error {
 	ssidSlot := payload[22+ieLen : 22+ieLen+32]
 	if ssidSlot[0] > 0 && int(ssidSlot[0]) <= 31 {
 		r.SSID = string(bytes.TrimRight(ssidSlot[1:1+ssidSlot[0]], "\x00"))
+	}
+	return nil
+}
+
+// ScanStartCfm is SCANU_START_CFM / SCANU_START_CFM_ADDTIONAL (struct scanu_start_cfm in lmac_msg.h).
+type ScanStartCfm struct {
+	VifIdx    uint8
+	Status    uint8
+	ResultCnt uint8
+}
+
+func (c *ScanStartCfm) Decode(payload []byte) error {
+	if len(payload) < 2 {
+		return fmt.Errorf("scan start cfm: short payload (%d bytes)", len(payload))
+	}
+	c.VifIdx = payload[0]
+	c.Status = payload[1]
+	if len(payload) >= 3 {
+		c.ResultCnt = payload[2]
 	}
 	return nil
 }

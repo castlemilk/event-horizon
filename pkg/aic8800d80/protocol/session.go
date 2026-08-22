@@ -59,6 +59,9 @@ func (s *Session) Device() *USBDevice { return s.dev }
 // (lmac.BulkWriter shape). Falls back to the data OUT endpoint when the
 // device exposes only one bulk OUT.
 func (s *Session) BulkOut(_ context.Context, frame []byte) error {
+	if s == nil || s.dev == nil {
+		return fmt.Errorf("session closed")
+	}
 	_, err := s.dev.BulkSend(s.dev.MsgOutEndpoint(), frame, 1000)
 	return err
 }
@@ -66,6 +69,9 @@ func (s *Session) BulkOut(_ context.Context, frame []byte) error {
 // BulkIn reads one chunk from the bulk IN endpoint into buf. Returns the
 // number of bytes received.
 func (s *Session) BulkIn(buf []byte, timeoutMs int) (int, error) {
+	if s == nil || s.dev == nil {
+		return 0, fmt.Errorf("session closed")
+	}
 	return s.dev.BulkRecv(s.dev.BulkInEndpoint(), buf, timeoutMs)
 }
 

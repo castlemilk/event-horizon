@@ -89,6 +89,10 @@ func openSession(ctx context.Context) (*session, error) {
 				lock, r.Channel, bandName(r.Band), r.RSSI,
 				r.BSSID[0], r.BSSID[1], r.BSSID[2], r.BSSID[3], r.BSSID[4], r.BSSID[5])
 		},
+		OnScanStartCfm: func(c lmac.ScanStartCfm) {
+			fmt.Printf("  scan start cfm: vif=%d status=%d result_cnt=%d\n",
+				c.VifIdx, c.Status, c.ResultCnt)
+		},
 		OnVersion: func(c lmac.VersionCfm) {
 			fmt.Printf("  firmware version : %s (lmac=0x%08x)\n", c.VersionString, c.VersionLMAC)
 			fmt.Printf("  machw: 0x%08x / 0x%08x | phy: 0x%08x / 0x%08x\n",
@@ -259,12 +263,17 @@ func runCmdListen(ctx context.Context, args []string) int {
 	counts := map[uint16]int{}
 	d := &event.Dispatch{
 		OnScanResult: func(r lmac.ScanResultInd) {
-			fmt.Printf("  SCANU_RESULT_IND ssid=%q ch=%d rssi=%d\n", r.SSID, r.Channel, r.RSSI)
+			counts[lmac.SCANUResultInd]++
+			fmt.Printf("  SCANU_RESULT_IND ssid=%q ch=%d rssi=%d bssid=%02x:%02x:%02x:%02x:%02x:%02x\n",
+				r.SSID, r.Channel, r.RSSI,
+				r.BSSID[0], r.BSSID[1], r.BSSID[2], r.BSSID[3], r.BSSID[4], r.BSSID[5])
 		},
 		OnVersion: func(c lmac.VersionCfm) {
+			counts[lmac.MMVersionCfm]++
 			fmt.Printf("  MM_VERSION_CFM %q\n", c.VersionString)
 		},
 		OnAnyUnknown: func(msgID uint16, p []byte) {
+			counts[msgID]++
 			n := len(p)
 			if n > 16 {
 				n = 16
@@ -272,17 +281,22 @@ func runCmdListen(ctx context.Context, args []string) int {
 			fmt.Printf("  msg 0x%04x len=%d % x\n", msgID, len(p), p[:n])
 		},
 	}
+	loopCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	loop := event.NewLoop(event.NewBulkFrameSource(dev, 200), d)
 	done := make(chan error, 1)
-	go func() { done <- loop.Run(ctx) }()
+	go func() { done <- loop.Run(loopCtx) }()
 
 	fmt.Printf("listening for %s (Ctrl-C to stop)...\n", *duration)
 	select {
 	case <-ctx.Done():
 	case <-time.After(*duration):
 	}
-	dev.Close() // unblock the bulk read
-	<-done
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+	}
 
 	ids := make([]uint16, 0, len(counts))
 	for id := range counts {

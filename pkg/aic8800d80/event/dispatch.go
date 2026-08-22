@@ -10,9 +10,10 @@ import (
 // Dispatch is the default Sink: routes known msg ids to typed decoders.
 // Unknown msg ids are logged and dropped (continue).
 type Dispatch struct {
-	OnScanResult func(lmac.ScanResultInd)
-	OnVersion    func(lmac.VersionCfm)
-	OnAnyUnknown func(msgID uint16, payload []byte)
+	OnScanResult   func(lmac.ScanResultInd)
+	OnScanStartCfm func(lmac.ScanStartCfm)
+	OnVersion      func(lmac.VersionCfm)
+	OnAnyUnknown   func(msgID uint16, payload []byte)
 }
 
 func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error {
@@ -27,6 +28,17 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 			return nil
 		}
 		d.OnScanResult(r)
+		return nil
+	case lmac.SCANUStartCfm, lmac.SCANUStartCfmAdditional:
+		if d.OnScanStartCfm == nil {
+			return nil
+		}
+		var c lmac.ScanStartCfm
+		if err := c.Decode(payload); err != nil {
+			log.Printf("[dispatch] scan start cfm decode: %v", err)
+			return nil
+		}
+		d.OnScanStartCfm(c)
 		return nil
 	case lmac.MMVersionCfm:
 		if d.OnVersion == nil {

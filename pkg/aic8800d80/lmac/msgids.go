@@ -55,13 +55,16 @@ const (
 // SCANU task messages (TASK_SCANU = 4). SCANU is the user-space-initiated
 // scan path used by fullmac firmwares.
 const (
-	SCANUStartReq  uint16 = 0x1000
-	SCANUStartCfm  uint16 = 0x1001
-	SCANUJoinReq   uint16 = 0x1002
-	SCANUJoinCfm   uint16 = 0x1003
-	SCANUResultInd uint16 = 0x1004 // async scan-result indication
-	SCANUFASTReq   uint16 = 0x1005
-	SCANUFASTCfm   uint16 = 0x1006
-	SCANUCancelReq uint16 = 0x100C
-	SCANUCancelCfm uint16 = 0x100D
+	SCANUStartReq           uint16 = 0x1000
+	SCANUStartCfm           uint16 = 0x1001
+	SCANUJoinReq            uint16 = 0x1002
+	SCANUJoinCfm            uint16 = 0x1003
+	SCANUResultInd          uint16 = 0x1004 // async scan-result indication
+	SCANUFASTReq            uint16 = 0x1005
+	SCANUFASTCfm            uint16 = 0x1006
+	SCANUVendorIEReq        uint16 = 0x1007
+	SCANUVendorIECfm        uint16 = 0x1008
+	SCANUStartCfmAdditional uint16 = 0x1009
+	SCANUCancelReq          uint16 = 0x100A
+	SCANUCancelCfm          uint16 = 0x100B
 )
