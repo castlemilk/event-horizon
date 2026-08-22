@@ -66,6 +66,7 @@ type session struct {
 	dispatch  *event.Dispatch
 	ackCh     chan uint16
 	loopDone  chan error
+	cancel    context.CancelFunc
 }
 
 // openSession opens the operational device and starts the event loop.
@@ -103,8 +104,13 @@ func openSession(ctx context.Context) (*session, error) {
 	s.loop = event.NewLoop(tee, s.dispatch)
 	s.submitter = lmac.NewSubmitter(dev, lmac.AckChannel(s.ackCh))
 
+	// The loop gets its own cancellable context so close() can stop it
+	// deterministically — without this the process hung forever holding
+	// exclusive USB ownership, starving later runs of all RX.
+	loopCtx, cancel := context.WithCancel(ctx)
+	s.cancel = cancel
 	s.loopDone = make(chan error, 1)
-	go func() { s.loopDone <- s.loop.Run(ctx) }()
+	go func() { s.loopDone <- s.loop.Run(loopCtx) }()
 
 	// Give the loop a moment to start pumping.
 	time.Sleep(50 * time.Millisecond)
@@ -113,8 +119,15 @@ func openSession(ctx context.Context) (*session, error) {
 
 // close stops the loop and releases the USB session.
 func (s *session) close() {
+	if s.cancel != nil {
+		s.cancel()
+	}
 	if s.loopDone != nil {
-		<-s.loopDone // Run returns nil on ctx cancel / source exhaustion
+		select {
+		case <-s.loopDone:
+		case <-time.After(3 * time.Second):
+			log.Printf("event loop did not stop within 3s; releasing device anyway")
+		}
 	}
 	s.sess.Close()
 }
