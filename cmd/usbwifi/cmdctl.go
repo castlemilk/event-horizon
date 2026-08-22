@@ -306,12 +306,19 @@ func runCmdProbe(ctx context.Context) int {
 	d := s.sess.Device()
 	log.Printf("endpoints: bulk_in=0x%02x bulk_out=0x%02x msg_in=0x%02x msg_out=0x%02x",
 		d.BulkInEndpoint(), d.BulkOutEndpoint(), d.MsgInEndpoint(), d.MsgOutEndpoint())
+	if dump, err := d.DumpConfig(); err == nil {
+		fmt.Print(dump)
+	} else {
+		log.Printf("dump config: %v", err)
+	}
 
 	// Raw RX tap in the background: every chunk received on bulk IN.
 	rawStop := make(chan struct{})
+	rxDone := make(chan struct{})
 	var rxBytes int
 	errCounts := map[string]int{}
 	go func() {
+		defer close(rxDone)
 		buf := make([]byte, 512)
 		for {
 			select {
@@ -325,7 +332,7 @@ func runCmdProbe(ctx context.Context) int {
 				log.Printf("RX %3d bytes: % x", n, buf[:n])
 			} else if rerr != nil {
 				msg := rerr.Error()
-				if msg != "bulk IN 0x84: LIBUSB_ERROR_TIMEOUT [Other]" && !strings.Contains(msg, "TIMEOUT") {
+				if !strings.Contains(msg, "TIMEOUT") {
 					errCounts[msg]++
 				}
 			}
@@ -354,6 +361,7 @@ func runCmdProbe(ctx context.Context) int {
 	}
 	time.Sleep(2 * time.Second)
 	close(rawStop)
+	<-rxDone // join before teardown — a mid-flight read + libusb_exit segfaults
 	log.Printf("probe done: %d RX bytes total", rxBytes)
 	for m, c := range errCounts {
 		log.Printf("read errors (%dx): %s", c, m)

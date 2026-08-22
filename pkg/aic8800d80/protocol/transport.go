@@ -109,9 +109,31 @@ static void find_bulk_endpoints(struct libusb_config_descriptor *cfg,
         }
     }
 }
+// dump_config writes a compact summary of every interface altsetting's
+// endpoints into buf. Returns the number of bytes written.
+static int dump_config(struct libusb_config_descriptor *cfg, char *buf, int cap) {
+    int off = 0;
+    for (int i = 0; i < cfg->bNumInterfaces; i++) {
+        struct libusb_interface *iface = (struct libusb_interface *)&cfg->interface[i];
+        for (int a = 0; a < iface->num_altsetting; a++) {
+            struct libusb_interface_descriptor *alt = (struct libusb_interface_descriptor *)&iface->altsetting[a];
+            off += snprintf(buf + off, cap - off, "if%d alt%d cls=0x%02x sub=0x%02x proto=0x%02x eps=%d:",
+                i, a, alt->bInterfaceClass, alt->bInterfaceSubClass,
+                alt->bInterfaceProtocol, alt->bNumEndpoints);
+            for (int e = 0; e < alt->bNumEndpoints; e++) {
+                struct libusb_endpoint_descriptor *ep = (struct libusb_endpoint_descriptor *)&alt->endpoint[e];
+                const char *t = (ep->bmAttributes & 0x03) == 2 ? "bulk" :
+                                (ep->bmAttributes & 0x03) == 3 ? "int" : "ctrl";
+                off += snprintf(buf + off, cap - off, " [0x%02x %s %d]", ep->bEndpointAddress, t, ep->wMaxPacketSize);
+            }
+            off += snprintf(buf + off, cap - off, "\n");
+        }
+    }
+    return off;
+}
 */
-import "C"
 
+import "C"
 import (
 	"fmt"
 	"unsafe"
@@ -233,6 +255,24 @@ func (d *USBDevice) MsgOutEndpoint() uint8 {
 // MsgInEndpoint returns the dedicated command IN endpoint (second bulk
 // IN), or 0 when the device exposes only one.
 func (d *USBDevice) MsgInEndpoint() uint8 { return d.msgIn }
+
+// DumpConfig returns a human-readable summary of every interface and
+// endpoint in the device's active configuration.
+func (d *USBDevice) DumpConfig() (string, error) {
+	dev := C.libusb_get_device(d.handle)
+	if dev == nil {
+		return "", fmt.Errorf("no device")
+	}
+	var cfg *C.struct_libusb_config_descriptor
+	rc := C.get_active_config(dev, &cfg)
+	if rc < 0 {
+		return "", fmt.Errorf("get active config: %s", libusbErrname(rc))
+	}
+	defer C.free_config(cfg)
+	buf := make([]byte, 4096)
+	n := C.dump_config(cfg, (*C.char)(unsafe.Pointer(&buf[0])), C.int(len(buf)))
+	return string(buf[:n]), nil
+}
 
 // Location returns the bus number and device address of the open device.
 // Used to detect true re-enumeration (address changes on every reset).
