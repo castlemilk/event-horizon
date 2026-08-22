@@ -15,8 +15,8 @@ type Session struct {
 
 // OpenOperational finds the dongle running operational firmware
 // (a69c:8d81 WiFi+BT or a69c:8d83 WiFi-only), opens it, detaches any
-// kernel driver and claims interface 0. The caller must Close the
-// returned session.
+// kernel driver and claims the WLAN interface (e.g. interface 2 on WiFi+BT).
+// The caller must Close the returned session.
 func OpenOperational(ctx context.Context) (*Session, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -38,15 +38,16 @@ func OpenOperational(ctx context.Context) (*Session, error) {
 		return nil, fmt.Errorf("open operational device: %w", err)
 	}
 	s.dev = dev
-	if err := dev.DetachKernelDriver(0); err != nil {
+	iface := int(dev.InterfaceNumber())
+	if err := dev.DetachKernelDriver(iface); err != nil {
 		dev.Close()
 		Deinit(c)
-		return nil, fmt.Errorf("detach kernel driver: %w", err)
+		return nil, fmt.Errorf("detach kernel driver iface %d: %w", iface, err)
 	}
-	if err := dev.ClaimInterface(0); err != nil {
+	if err := dev.ClaimInterface(iface); err != nil {
 		dev.Close()
 		Deinit(c)
-		return nil, fmt.Errorf("claim interface 0: %w", err)
+		return nil, fmt.Errorf("claim interface %d: %w", iface, err)
 	}
 	return s, nil
 }
@@ -65,7 +66,7 @@ func (s *Session) BulkOut(_ context.Context, frame []byte) error {
 // BulkIn reads one chunk from the bulk IN endpoint into buf. Returns the
 // number of bytes received.
 func (s *Session) BulkIn(buf []byte, timeoutMs int) (int, error) {
-	return s.dev.BulkRecv(BulkINEndpoint, buf, timeoutMs)
+	return s.dev.BulkRecv(s.dev.BulkInEndpoint(), buf, timeoutMs)
 }
 
 // Close releases the interface, closes the handle and deinitialises the
@@ -75,7 +76,7 @@ func (s *Session) Close() {
 		return
 	}
 	if s.dev != nil {
-		s.dev.ReleaseInterface(0)
+		s.dev.ReleaseInterface(int(s.dev.InterfaceNumber()))
 		s.dev.Close()
 		s.dev = nil
 	}

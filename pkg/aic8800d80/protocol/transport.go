@@ -80,28 +80,47 @@ static void free_config(struct libusb_config_descriptor *cfg) {
 	libusb_free_config_descriptor(cfg);
 }
 
-// Walk endpoints of interface 0 / alt 0 and return the bulk IN + OUT
-// addresses. The first of each direction lands in in/out; the second
-// (the dedicated command "msg" endpoints used by the fdrv driver) in
-// in2/out2. 0 means none found.
-static void find_bulk_endpoints(struct libusb_config_descriptor *cfg,
+// Walk endpoints of the WLAN interface (cls=0xff, sub=0xff, proto=0xff
+// on composite devices like WiFi+BT, or interface 0 as fallback) and return
+// the interface number and bulk IN + OUT addresses. The first of each direction
+// lands in in/out; the second (the dedicated command "msg" endpoints used by
+// the fdrv driver) in in2/out2. 0 means none found.
+static int find_bulk_endpoints(struct libusb_config_descriptor *cfg,
+                                uint8_t *iface_num,
                                 uint8_t *in, uint8_t *out,
                                 uint8_t *in2, uint8_t *out2) {
+    *iface_num = 0;
     *in = 0;
     *out = 0;
     *in2 = 0;
     *out2 = 0;
-    if (cfg->bNumInterfaces < 1) return;
-    struct libusb_interface *iface = (struct libusb_interface *)&cfg->interface[0];
-    if (iface->num_altsetting < 1) return;
+    if (cfg->bNumInterfaces < 1) return -1;
+
+    int chosen = -1;
+    for (int i = 0; i < cfg->bNumInterfaces; i++) {
+        struct libusb_interface *iface = (struct libusb_interface *)&cfg->interface[i];
+        if (iface->num_altsetting < 1) continue;
+        struct libusb_interface_descriptor *alt = (struct libusb_interface_descriptor *)&iface->altsetting[0];
+        if (alt->bInterfaceClass == 0xff && alt->bInterfaceSubClass == 0xff && alt->bInterfaceProtocol == 0xff) {
+            chosen = i;
+            break;
+        }
+    }
+    if (chosen < 0) {
+        chosen = 0;
+    }
+
+    struct libusb_interface *iface = (struct libusb_interface *)&cfg->interface[chosen];
+    if (iface->num_altsetting < 1) return -1;
     struct libusb_interface_descriptor *alt = (struct libusb_interface_descriptor *)&iface->altsetting[0];
+    *iface_num = alt->bInterfaceNumber;
+
     for (int i = 0; i < alt->bNumEndpoints; i++) {
         struct libusb_endpoint_descriptor *ep = (struct libusb_endpoint_descriptor *)&alt->endpoint[i];
         // bmAttributes low 2 bits are transfer type; 2 = bulk
         if ((ep->bmAttributes & 0x03) != 2) continue;
         uint8_t addr = ep->bEndpointAddress;
         if (addr & 0x80) {
-            addr &= 0x7f;
             if (*in == 0) *in = addr;
             else if (*in2 == 0) *in2 = addr;
         } else {
@@ -109,6 +128,7 @@ static void find_bulk_endpoints(struct libusb_config_descriptor *cfg,
             else if (*out2 == 0) *out2 = addr;
         }
     }
+    return 0;
 }
 // dump_config writes a compact summary of every interface altsetting's
 // endpoints into buf. Returns the number of bytes written.
@@ -141,10 +161,11 @@ import (
 
 // USBDevice is a thin Go wrapper around libusb_device + libusb_device_handle.
 type USBDevice struct {
-	handle  *C.libusb_device_handle
-	dev     *C.libusb_device
-	bulkIn  uint8
-	bulkOut uint8
+	handle   *C.libusb_device_handle
+	dev      *C.libusb_device
+	ifaceNum uint8
+	bulkIn   uint8
+	bulkOut  uint8
 	// msgIn/msgOut are the second bulk endpoints of each direction — the
 	// dedicated command pipes (fdrv msg_in_pipe / msg_out_pipe). 0 if the
 	// device exposes only one endpoint per direction.
@@ -188,12 +209,12 @@ func OpenByVIDPID(ctx *C.libusb_context, vid, pid uint16) (*USBDevice, error) {
 		C.libusb_close(h)
 		return nil, fmt.Errorf("find device for %04x:%04x: %w", vid, pid, err)
 	}
-	bulkIn, bulkOut, msgIn, msgOut, err := findBulkEndpoints(dev)
+	ifaceNum, bulkIn, bulkOut, msgIn, msgOut, err := findBulkEndpoints(dev)
 	if err != nil {
 		C.libusb_close(h)
 		return nil, fmt.Errorf("find bulk endpoints for %04x:%04x: %w", vid, pid, err)
 	}
-	return &USBDevice{handle: h, dev: dev, bulkIn: bulkIn, bulkOut: bulkOut, msgIn: msgIn, msgOut: msgOut}, nil
+	return &USBDevice{handle: h, dev: dev, ifaceNum: ifaceNum, bulkIn: bulkIn, bulkOut: bulkOut, msgIn: msgIn, msgOut: msgOut}, nil
 }
 
 // deviceMatch returns the libusb_device pointer for the first match of
@@ -220,22 +241,27 @@ func deviceMatch(ctx *C.libusb_context, vid, pid uint16) (*C.libusb_device, erro
 }
 
 // findBulkEndpoints walks the device's active config and returns the
-// first and second bulk IN and OUT endpoint addresses (interface 0 /
-// alt 0). Second endpoints are 0 when absent.
-func findBulkEndpoints(dev *C.libusb_device) (in, out, msgIn, msgOut uint8, err error) {
+// interface number and first and second bulk IN and OUT endpoint addresses.
+// Second endpoints are 0 when absent.
+func findBulkEndpoints(dev *C.libusb_device) (ifaceNum, in, out, msgIn, msgOut uint8, err error) {
 	var cfg *C.struct_libusb_config_descriptor
 	rc := C.get_active_config(dev, &cfg)
 	if rc < 0 {
-		return 0, 0, 0, 0, fmt.Errorf("get active config: %s", libusbErrname(rc))
+		return 0, 0, 0, 0, 0, fmt.Errorf("get active config: %s", libusbErrname(rc))
 	}
 	defer C.free_config(cfg)
+	var iface C.uint8_t
 	var inAddr, outAddr, in2Addr, out2Addr C.uint8_t
-	C.find_bulk_endpoints(cfg, &inAddr, &outAddr, &in2Addr, &out2Addr)
-	return uint8(inAddr), uint8(outAddr), uint8(in2Addr), uint8(out2Addr), nil
+	if C.find_bulk_endpoints(cfg, &iface, &inAddr, &outAddr, &in2Addr, &out2Addr) < 0 {
+		return 0, 0, 0, 0, 0, fmt.Errorf("no bulk endpoints found")
+	}
+	return uint8(iface), uint8(inAddr), uint8(outAddr), uint8(in2Addr), uint8(out2Addr), nil
 }
 
-// BulkInEndpoint returns the discovered bulk IN endpoint (0x80 bit
-// cleared). Returns 0 if not yet known.
+// InterfaceNumber returns the WLAN interface number (e.g. 2 for WiFi+BT, 0 for WiFi-only/BootROM).
+func (d *USBDevice) InterfaceNumber() uint8 { return d.ifaceNum }
+
+// BulkInEndpoint returns the discovered bulk IN endpoint. Returns 0 if not yet known.
 func (d *USBDevice) BulkInEndpoint() uint8 { return d.bulkIn }
 
 // BulkOutEndpoint returns the discovered bulk OUT endpoint. Returns 0
@@ -255,6 +281,11 @@ func (d *USBDevice) MsgOutEndpoint() uint8 {
 // MsgInEndpoint returns the dedicated command IN endpoint (second bulk
 // IN), or 0 when the device exposes only one.
 func (d *USBDevice) MsgInEndpoint() uint8 { return d.msgIn }
+
+// BulkIn reads one chunk from the device's bulk IN endpoint.
+func (d *USBDevice) BulkIn(buf []byte, timeoutMs int) (int, error) {
+	return d.BulkRecv(d.bulkIn, buf, timeoutMs)
+}
 
 // DumpConfig returns a human-readable summary of every interface and
 // endpoint in the device's active configuration.
