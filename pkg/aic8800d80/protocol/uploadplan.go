@@ -27,11 +27,11 @@ import (
 // while reads at 0x170000..0x1701c0 succeeded).
 const (
 	CloneWallAddr      uint32 = 0x170000 // ≥ this: 1KB block writes wedge
-	CloneRegBlockStart uint32 = 0x1701c0 // no-write AND no-read zone (80 B)
-	CloneRegBlockEnd   uint32 = 0x170210
+	CloneRegBlockStart uint32 = 0x170180 // no-write zone (256 B)
+	CloneRegBlockEnd   uint32 = 0x170280
 	CloneSmallChunk           = 16 // verified-safe small-block size ≥ wall
 	// CloneVerifySafeAddr: verify reads allowed only at/above this.
-	CloneVerifySafeAddr uint32 = 0x170200
+	CloneVerifySafeAddr uint32 = 0x170280
 )
 
 // ChunkOp is one planned block write.
@@ -119,17 +119,11 @@ type SkipZone struct {
 // of margin past the outermost observed point).
 func CloneRegZones() []SkipZone {
 	zones := []SkipZone{
-		{Start: 0x1701c0, End: 0x170210},
-		{Start: 0x1723e0, End: 0x172430},
-		{Start: 0x174600, End: 0x174650},
-		{Start: 0x176820, End: 0x176870},
-	}
-	// Small-write poisons mapped by --poison-map (2026-08-19, direct
-	// USB-C connection): 4B word writes at these addresses wedge the
-	// ROM outright; 1KB bursts cross them fine (block1-halo pattern).
-	// Verified: 0x172434 x3 (14:03, 14:12, 19:13), 0x173094 x1 (14:45).
-	for _, p := range []uint32{0x172434, 0x173094} {
-		zones = append(zones, SkipZone{Start: p, End: p + 4})
+		{Start: 0x170180, End: 0x170280},
+		{Start: 0x172380, End: 0x1724a0},
+		{Start: 0x174580, End: 0x1746a0},
+		{Start: 0x176780, End: 0x1768a0},
+		{Start: 0x173080, End: 0x173100},
 	}
 	return zones
 }

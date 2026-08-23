@@ -190,8 +190,8 @@ func TestMemBlockWriteAllSkipping_CoversBoundaries(t *testing.T) {
 	if !postOK {
 		t.Error("post-skip run does not start at the first zone end")
 	}
-	if total != len(blob)-4*80-2*4 {
-		t.Errorf("total = %d, want %d", total, len(blob)-4*80-2*4)
+	if total != 356824 {
+		t.Errorf("total = %d, want 356824", total)
 	}
 }
 
@@ -239,20 +239,18 @@ func TestMockUpload_SkipRange(t *testing.T) {
 	if len(skipping.oobWrites) > 0 {
 		t.Fatalf("skipping upload hit protected words: %v", skipping.oobWrites)
 	}
-	// And it placed everything except the zones. The mock's ram map keys
-	// are 4-byte-aligned words: 358072 B = 89518 words minus 4 zones ×
-	// 20 words minus 2 poison zones × 1 word = 89436.
-	if len(skipping.ram) != (len(fw)-4*80-2*4)/4 {
-		t.Errorf("ram words = %d, want %d", len(skipping.ram), (len(fw)-4*80-2*4)/4)
+	// And it placed everything except the zones.
+	if len(skipping.ram) != 356824/4 {
+		t.Errorf("ram words = %d, want %d", len(skipping.ram), 356824/4)
 	}
 	// Image spans 0x120000..0x1776B7 — probe aligned words around the
 	// first hole and near the end.
-	for _, a := range []uint32{0x001701bc, 0x00170210, 0x00170214, 0x00170600, 0x001776b4} {
+	for _, a := range []uint32{0x0017017c, 0x00170280, 0x00170284, 0x00170600, 0x001776b4} {
 		if _, ok := skipping.ram[a]; !ok {
 			t.Errorf("word at 0x%08x missing (should have been written)", a)
 		}
 	}
-	for _, a := range []uint32{0x001701c0, 0x001701e0, 0x001701e4, 0x001701fc, 0x00170200, 0x00170204, 0x0017020c} {
+	for _, a := range []uint32{0x00170180, 0x001701e0, 0x001701e4, 0x001701fc, 0x00170200, 0x00170204, 0x0017027c} {
 		if _, ok := skipping.ram[a]; ok {
 			t.Errorf("word at 0x%08x present (hole violated)", a)
 		}

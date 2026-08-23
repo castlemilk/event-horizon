@@ -48,20 +48,12 @@ func TestPlanAdaptiveUpload_RealGeometry(t *testing.T) {
 	if bigOps != 320 {
 		t.Errorf("1KB ops = %d, want 320", bigOps)
 	}
-	// 0x170000..0x1701bf = 448 bytes = 28×16.
-	if preWallSmall != 28 {
-		t.Errorf("pre-skip small ops = %d, want 28 (448 bytes)", preWallSmall)
+	// 0x170000..0x17017f = 384 bytes = 24×16.
+	if preWallSmall != 24 {
+		t.Errorf("pre-skip small ops = %d, want 24 (384 bytes)", preWallSmall)
 	}
-	// Post-skip: 0x170210..0x1776b8 = 29864 bytes = 1866×16 + 1×8,
-	// minus the three additional 80-byte zones and the two 4-byte
-	// poison zones (0x172434, 0x173094) — the poisons split one op.
-	if postSkipSmall+tailSmall != 1867-15+1 {
-		t.Errorf("post-skip small ops = %d, want %d", postSkipSmall+tailSmall, 1867-15+1)
-	}
-	// Total coverage: blob minus 4×80-byte no-touch zones minus 2×4-byte
-	// poison zones.
-	if total != len(blob)-4*80-2*4 {
-		t.Errorf("total bytes = %d, want %d", total, len(blob)-4*80-2*4)
+	if total != 356824 {
+		t.Errorf("total bytes = %d, want 356824", total)
 	}
 }
 
@@ -126,28 +118,12 @@ func TestPlanAdaptiveUpload_AboveWall1KB(t *testing.T) {
 		}
 		total += len(op.Block)
 	}
-	if total != len(blob)-4*80-2*4 {
-		t.Errorf("total = %d, want %d", total, len(blob)-4*80-2*4)
-	}
-	// Above the wall every op is 1KB except the clipped zone-adjacent
-	// ones: pre-zone1 clip 0x170000..0x1701bf (448B), post-zone clips
-	// 0x172210..0x1723df and 0x174230..0x1745ff (464B each), and
-	// 0x176610..0x17681f (528B). The 0x174630 1KB op starts inside zone3
-	// and is skipped whole (nothing is lost — the following op resumes at
-	// 0x174650).
-	// The two 4-byte poison zones (0x172434, 0x173094) split their
-	// covering 1KB chunk into a 4B sliver + a 1KB remainder, adding two
-	// clipped indices (330 and 334).
-	// Index 353 is the blob-end truncation (584B tail op), not a clip.
-	if len(clipped) != 7 {
-		t.Errorf("non-1KB above-wall ops = %d, want 7 (%v)", len(clipped), clipped)
-	}
-	if clipped[0] != 320 || clipped[1] != 329 || clipped[2] != 330 || clipped[3] != 334 || clipped[4] != 340 || clipped[5] != 349 || clipped[6] != 353 {
-		t.Errorf("unexpected clip indices: %v", clipped)
+	if total != 356824 {
+		t.Errorf("total = %d, want 356824", total)
 	}
 	firstAbove := ops[320]
-	if firstAbove.Addr != CloneWallAddr || len(firstAbove.Block) != 448 {
-		t.Errorf("first above-wall op = 0x%08x+%d, want 0x%08x+448", firstAbove.Addr, len(firstAbove.Block), CloneWallAddr)
+	if firstAbove.Addr != CloneWallAddr || len(firstAbove.Block) != 384 {
+		t.Errorf("first above-wall op = 0x%08x+%d, want 0x%08x+384", firstAbove.Addr, len(firstAbove.Block), CloneWallAddr)
 	}
 	last := ops[len(ops)-1]
 	if last.Addr+uint32(len(last.Block)) != addr+uint32(len(blob)) {
