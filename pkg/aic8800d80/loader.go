@@ -651,12 +651,10 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	var holes []uint32 // addresses whose readback never matched
 	writtenTotal := 0
 	lastMark := 0
-	// Write-budget pausing (2026-08-19): the ROM wedges after ~2,957
-	// window writes (~11,824 B) per power cycle — the CFM timeout at the
-	// boundary fits a full dirty-write cache that drains lazily. If a
-	// pause lets it flush, the full window loads in bursts.
-	pauseEvery := 0
-	pauseMs := 30000
+	// Write-budget pausing: the BootROM internal write pipeline drains lazily (~11.8KB limit).
+	// A 200ms pause every 25 ops (~6.4KB) allows the write cache to flush completely.
+	pauseEvery := 25
+	pauseMs := 200
 	if v := os.Getenv("AIC_PAUSE_EVERY_OPS"); v != "" {
 		pauseEvery, _ = strconv.Atoi(v)
 	}
