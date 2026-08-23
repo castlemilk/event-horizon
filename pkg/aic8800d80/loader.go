@@ -570,12 +570,11 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			zones = protocol.CloneRegZones()
 			chunk = protocol.BlockWriteChunkBytes
 			log.Printf("[AIC] REGISTER-WINDOW 1KB MODE: %dB chunks above 0x%x, halo zones %v", chunk, wall, zones)
+		case os.Getenv("AIC_CLONE_ZONES") != "":
+			zones = protocol.CloneRegZones()
+			chunk = protocol.CloneSmallChunk
+			log.Printf("[AIC] CLONE ZONES EXPERIMENT: %dB chunks, halo zones %v", chunk, zones)
 		case os.Getenv("AIC_WINDOW_WORD") != "":
-			// LINUX-PARITY MODE: word (4B) DBG_MEM_WRITE ops above the
-			// wall, exactly like the Linux driver's patch writes (which
-			// succeed at 0x177158/0x177c00). Word ops have never wedged
-			// outside the register blocks themselves; the 80B halos are
-			// skipped conservatively.
 			zones = protocol.CloneRegZones()
 			chunk = 4
 			wordMode = true
@@ -589,7 +588,7 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			log.Printf("[AIC] REGISTER-WINDOW SKIP MODE: loading only the %d bytes below 0x%x (boot feasibility experiment)",
 				int(wall)-int(ramFMACFW), wall)
 		default:
-			zones = protocol.CloneRegZones()
+			zones = nil
 			chunk = protocol.BlockWriteChunkBytes
 		}
 		// Probe-driven zone overrides (hex): the wedge-zone boundaries
