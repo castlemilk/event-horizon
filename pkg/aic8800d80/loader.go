@@ -588,9 +588,9 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 				int(wall)-int(ramFMACFW), wall)
 		default:
 			zones = protocol.CloneRegZones()
-			chunk = 256
+			chunk = protocol.CloneSmallChunk
 			wordMode = false
-			log.Printf("[AIC] DEFAULT MODE: 1KB block writes below 0x%x, 256B block writes above with widened USB descriptor zones skipped", wall)
+			log.Printf("[AIC] DEFAULT MODE: 1KB block writes below 0x%x, 16B block writes above with 4 halo zones skipped", wall)
 		}
 		// Probe-driven zone overrides (hex): the wedge-zone boundaries
 		// past block2..4 are still being mapped. The ~9.1KB window-write
@@ -651,9 +651,29 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	var holes []uint32 // addresses whose readback never matched
 	writtenTotal := 0
 	lastMark := 0
+	portResetDone := false
 
 	for i, op := range ops {
 		opStart := time.Now()
+		if op.Addr >= wall && !portResetDone {
+			log.Printf("[AIC] reached 0x%x boundary — performing USB port reset to clear endpoint FIFO budget", wall)
+			if err := dev.ResetDevice(); err != nil {
+				log.Printf("[AIC] port reset warning: %v", err)
+			}
+			time.Sleep(600 * time.Millisecond)
+			nd, oerr := protocol.OpenByVIDPID(c, protocol.VID_AIC8800D80_BootROM, protocol.PID_AIC8800D80_BootROM)
+			if oerr != nil {
+				return fmt.Errorf("reopen boot ROM after port reset: %w", oerr)
+			}
+			dev = nd
+			devReleased = false
+			if cerr := dev.ClaimInterface(0); cerr != nil {
+				return fmt.Errorf("claim interface after port reset: %w", cerr)
+			}
+			protocol.SetTxLenConv(protocol.ConvLinux)
+			protocol.Drain(dev, 16)
+			portResetDone = true
+		}
 		if wordMode && len(op.Block) == 4 && op.Addr >= wall {
 			if err := protocol.MemWrite(dev, op.Addr, binary.LittleEndian.Uint32(op.Block)); err != nil {
 				return fmt.Errorf("upload fmacfw: op %d/%d (0x%08x, word write): %w", i+1, len(ops), op.Addr, err)
@@ -664,7 +684,7 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			}
 		}
 		if op.Addr >= wall {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(3 * time.Millisecond)
 		}
 		writtenTotal += len(op.Block)
 		res.BytesUploaded += len(op.Block)
