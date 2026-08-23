@@ -588,9 +588,9 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 				int(wall)-int(ramFMACFW), wall)
 		default:
 			zones = protocol.CloneRegZones()
-			chunk = protocol.CloneSmallChunk
+			chunk = 256
 			wordMode = false
-			log.Printf("[AIC] DEFAULT MODE: 1KB block writes below 0x%x, 16B block writes above with 4 halo zones skipped", wall)
+			log.Printf("[AIC] DEFAULT MODE: 1KB block writes below 0x%x, 256B block writes above with widened USB descriptor zones skipped", wall)
 		}
 		// Probe-driven zone overrides (hex): the wedge-zone boundaries
 		// past block2..4 are still being mapped. The ~9.1KB window-write
@@ -651,34 +651,8 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	var holes []uint32 // addresses whose readback never matched
 	writtenTotal := 0
 	lastMark := 0
-	lastResetAddr := uint32(0)
-
 	for i, op := range ops {
 		opStart := time.Now()
-		if op.Addr >= wall && (lastResetAddr == 0 || op.Addr-lastResetAddr >= 8*1024) {
-			log.Printf("[AIC] reached 0x%08x — performing USB port reset to clear endpoint FIFO budget", op.Addr)
-			if err := dev.ResetDevice(); err != nil {
-				log.Printf("[AIC] port reset warning: %v", err)
-			}
-			dev.ReleaseInterface(0)
-			dev.Close()
-			time.Sleep(1500 * time.Millisecond)
-			nd, oerr := protocol.OpenByVIDPID(c, protocol.VID_AIC8800D80_BootROM, protocol.PID_AIC8800D80_BootROM)
-			if oerr != nil {
-				return fmt.Errorf("reopen boot ROM after port reset: %w", oerr)
-			}
-			dev = nd
-			devReleased = false
-			if err := dev.DetachKernelDriver(0); err != nil {
-				log.Printf("[AIC] detach kernel driver after port reset: %v", err)
-			}
-			if cerr := dev.ClaimInterface(0); cerr != nil {
-				return fmt.Errorf("claim interface after port reset: %w", cerr)
-			}
-			protocol.SetTxLenConv(protocol.ConvLinux)
-			protocol.Drain(dev, 16)
-			lastResetAddr = op.Addr
-		}
 		if wordMode && len(op.Block) == 4 && op.Addr >= wall {
 			if err := protocol.MemWrite(dev, op.Addr, binary.LittleEndian.Uint32(op.Block)); err != nil {
 				return fmt.Errorf("upload fmacfw: op %d/%d (0x%08x, word write): %w", i+1, len(ops), op.Addr, err)
@@ -689,7 +663,7 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			}
 		}
 		if op.Addr >= wall {
-			time.Sleep(3 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 		writtenTotal += len(op.Block)
 		res.BytesUploaded += len(op.Block)
@@ -732,12 +706,27 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	// register-window write (the ~9.1KB budget), so the descriptor
 	// write would time out — skip it and race START_APP in instead.
 	if chipID != protocol.ChipRevU01 {
-		if os.Getenv("AIC_APPLY_PATCH_CONFIG") != "" {
-			if err := applyPatchConfig(dev, ramFMACFW, fmac, v3Profile); err != nil {
-				log.Printf("[AIC] patch config warning: %v (ignoring)", err)
-			}
+		log.Printf("[AIC] performing USB port reset before patch config")
+		_ = dev.ResetDevice()
+		dev.ReleaseInterface(0)
+		dev.Close()
+		time.Sleep(1500 * time.Millisecond)
+		nd, oerr := protocol.OpenByVIDPID(c, protocol.VID_AIC8800D80_BootROM, protocol.PID_AIC8800D80_BootROM)
+		if oerr != nil {
+			log.Printf("[AIC] reopen boot ROM warning: %v", oerr)
 		} else {
-			log.Printf("[AIC] skipping patch config (built-in binary descriptor active) — executing START_APP")
+			dev = nd
+			devReleased = false
+			_ = dev.DetachKernelDriver(0)
+			if cerr := dev.ClaimInterface(0); cerr != nil {
+				log.Printf("[AIC] claim interface warning: %v", cerr)
+			} else {
+				protocol.SetTxLenConv(protocol.ConvLinux)
+				protocol.Drain(dev, 16)
+				if err := applyPatchConfig(dev, ramFMACFW, fmac, v3Profile); err != nil {
+					log.Printf("[AIC] patch config warning: %v (ignoring)", err)
+				}
+			}
 		}
 	}
 
