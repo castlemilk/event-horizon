@@ -651,16 +651,10 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	var holes []uint32 // addresses whose readback never matched
 	writtenTotal := 0
 	lastMark := 0
-	// Write-budget pausing: the BootROM internal write pipeline drains lazily (~11.8KB limit).
-	// A 200ms pause every 25 ops (~6.4KB) allows the write cache to flush completely.
-	pauseEvery := 25
-	pauseMs := 200
-	if v := os.Getenv("AIC_PAUSE_EVERY_OPS"); v != "" {
-		pauseEvery, _ = strconv.Atoi(v)
-	}
-	if v := os.Getenv("AIC_PAUSE_MS"); v != "" {
-		pauseMs, _ = strconv.Atoi(v)
-	}
+	windowBytesWritten := 0
+	const windowFlushThreshold = 4 * 1024               // 4KB write budget per burst
+	const windowFlushDuration = 1200 * time.Millisecond // 1.2s to drain dirty write cache
+
 	for i, op := range ops {
 		opStart := time.Now()
 		if wordMode && len(op.Block) == 4 && op.Addr >= wall {
@@ -673,7 +667,14 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			}
 		}
 		if op.Addr >= wall {
-			time.Sleep(2 * time.Millisecond)
+			windowBytesWritten += len(op.Block)
+			if windowBytesWritten >= windowFlushThreshold {
+				windowBytesWritten = 0
+				log.Printf("[AIC] window dirty cache flush (1.2s pause at 0x%08x, op %d/%d)", op.Addr, i+1, len(ops))
+				time.Sleep(windowFlushDuration)
+			} else {
+				time.Sleep(3 * time.Millisecond)
+			}
 		}
 		writtenTotal += len(op.Block)
 		res.BytesUploaded += len(op.Block)
@@ -701,10 +702,6 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 		// started dying.
 		if d := time.Since(opStart); d > time.Second {
 			log.Printf("[AIC] op %d/%d (0x%08x) slow: %v", i+1, len(ops), op.Addr, d.Round(time.Millisecond))
-		}
-		if pauseEvery > 0 && (i+1)%pauseEvery == 0 && i+1 < len(ops) {
-			log.Printf("[AIC] pause %dms at op %d/%d (letting the ROM flush its write cache)", pauseMs, i+1, len(ops))
-			time.Sleep(time.Duration(pauseMs) * time.Millisecond)
 		}
 	}
 	log.Printf("[AIC] fmacfw upload complete: %d/%d ops, %d bytes placed, %d verification hole(s)",
