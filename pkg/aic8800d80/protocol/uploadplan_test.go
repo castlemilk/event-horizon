@@ -52,8 +52,8 @@ func TestPlanAdaptiveUpload_RealGeometry(t *testing.T) {
 	if preWallSmall != 24 {
 		t.Errorf("pre-skip small ops = %d, want 24 (384 bytes)", preWallSmall)
 	}
-	if total != 338560 {
-		t.Errorf("total bytes = %d, want 338560", total)
+	if total != 356984 {
+		t.Errorf("total bytes = %d, want 356984", total)
 	}
 }
 
@@ -86,8 +86,8 @@ func TestPlanAdaptiveUpload_Boundaries(t *testing.T) {
 	if firstPostSkip == nil || firstPostSkip.Addr != CloneRegBlockEnd {
 		t.Errorf("first post-skip op should start at 0x%08x, got %+v", CloneRegBlockEnd, firstPostSkip)
 	}
-	// Image ends before Zone 3 at 0x174000.
-	wantLast := uint32(0x174000)
+	// Image ends at 0x120000+358072 = 0x1776b8.
+	wantLast := addr + uint32(len(blob))
 	if last.Addr+uint32(len(last.Block)) != wantLast {
 		t.Errorf("last op ends at 0x%08x, want 0x%08x", last.Addr+uint32(len(last.Block)), wantLast)
 	}
@@ -118,16 +118,16 @@ func TestPlanAdaptiveUpload_AboveWall1KB(t *testing.T) {
 		}
 		total += len(op.Block)
 	}
-	if total != 338560 {
-		t.Errorf("total = %d, want 338560", total)
+	if total != 356984 {
+		t.Errorf("total = %d, want 356984", total)
 	}
 	firstAbove := ops[320]
 	if firstAbove.Addr != CloneWallAddr || len(firstAbove.Block) != 384 {
 		t.Errorf("first above-wall op = 0x%08x+%d, want 0x%08x+384", firstAbove.Addr, len(firstAbove.Block), CloneWallAddr)
 	}
 	last := ops[len(ops)-1]
-	if last.Addr+uint32(len(last.Block)) != 0x174000 {
-		t.Errorf("last op ends at 0x%08x, want 0x174000", last.Addr+uint32(len(last.Block)))
+	if last.Addr+uint32(len(last.Block)) != addr+uint32(len(blob)) {
+		t.Errorf("last op ends at 0x%08x, want 0x%08x", last.Addr+uint32(len(last.Block)), addr+uint32(len(blob)))
 	}
 }
 

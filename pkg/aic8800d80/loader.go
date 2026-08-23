@@ -588,9 +588,9 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 				int(wall)-int(ramFMACFW), wall)
 		default:
 			zones = protocol.CloneRegZones()
-			chunk = 256
+			chunk = protocol.CloneSmallChunk
 			wordMode = false
-			log.Printf("[AIC] DEFAULT MODE: 1KB block writes below 0x%x, 256B block writes above with widened USB descriptor zones skipped", wall)
+			log.Printf("[AIC] DEFAULT MODE: 1KB block writes below 0x%x, 16B block writes above with 4 register zones skipped", wall)
 		}
 		// Probe-driven zone overrides (hex): the wedge-zone boundaries
 		// past block2..4 are still being mapped. The ~9.1KB window-write
@@ -664,7 +664,7 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			}
 		}
 		if op.Addr >= wall {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(3 * time.Millisecond)
 		}
 		writtenTotal += len(op.Block)
 		res.BytesUploaded += len(op.Block)
