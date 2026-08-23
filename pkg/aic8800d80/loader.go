@@ -675,15 +675,8 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			lastMark = writtenTotal
 			log.Printf("[AIC] fmacfw progress: %d / %d bytes", writtenTotal, len(fmac))
 		}
-		// Past the verify-safe line: confirm the first word actually
-		// stuck. One rewrite attempt; persistent mismatches become holes
-		// (reported, not fatal — the firmware may still boot without
-		// them). Reads below CloneVerifySafeAddr are NEVER issued — they
-		// wedge the ROM (hardware-verified at 0x1701d0). AIC_NO_VERIFY=1
-		// skips readback entirely (isolates write-vs-read wedge causes;
-		// word writes are proven to retain, so a no-verify word run can
-		// still land a complete image).
-		if op.Addr >= protocol.CloneVerifySafeAddr && len(op.Block) >= 4 && os.Getenv("AIC_NO_VERIFY") == "" {
+		// Match Linux driver: do not interleave verify reads during firmware upload (interleaved reads can wedge the BootROM)
+		if os.Getenv("AIC_VERIFY_WRITES") != "" && op.Addr >= protocol.CloneVerifySafeAddr && len(op.Block) >= 4 {
 			want := uint32(op.Block[0]) | uint32(op.Block[1])<<8 | uint32(op.Block[2])<<16 | uint32(op.Block[3])<<24
 			got, rerr := protocol.MemRead(dev, op.Addr)
 			if rerr != nil {
