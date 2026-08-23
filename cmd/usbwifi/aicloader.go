@@ -97,8 +97,9 @@ func runAICLoader(args []string) int {
 	// Stop the running daemon if requested. The daemon keeps the USB
 	// device claimed; we need to release it before opening our own.
 	if *killDaemon {
-		log.Printf("stopping running usbwifi daemon...")
-		_ = exec.Command("pkill", "-x", "usbwifi").Run()
+		log.Printf("stopping running usbwifi / usbwifi-mcp daemon...")
+		_ = exec.Command("pkill", "-9", "-f", "usbwifi").Run()
+		_ = exec.Command("pkill", "-9", "-f", "usbwifi-mcp").Run()
 		time.Sleep(500 * time.Millisecond)
 	}
 
