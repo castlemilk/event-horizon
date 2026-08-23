@@ -580,13 +580,7 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			chunk = 4
 			wordMode = true
 			log.Printf("[AIC] REGISTER-WINDOW WORD MODE: 4B word writes above 0x%x, halo zones %v", wall, zones)
-		case os.Getenv("AIC_FULL_WINDOW") == "":
-			// DEFAULT (boot-feasibility experiment): load ONLY the
-			// rock-solid 1KB phase below the wall and skip the entire
-			// register-window region. The 16B phase has wedged the clone
-			// in 7/7 runs — every wedge within ±0x30 of a register block,
-			// drifting per run as the device degrades. AIC_FULL_WINDOW=1
-			// restores the full adaptive plan.
+		case os.Getenv("AIC_SKIP_WINDOW") != "":
 			zones = []protocol.SkipZone{{Start: wall, End: 0xFFFFFFFF}}
 			log.Printf("[AIC] REGISTER-WINDOW SKIP MODE: loading only the %d bytes below 0x%x (boot feasibility experiment)",
 				int(wall)-int(ramFMACFW), wall)
