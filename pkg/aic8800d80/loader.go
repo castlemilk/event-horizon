@@ -580,12 +580,17 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			chunk = 4
 			wordMode = true
 			log.Printf("[AIC] REGISTER-WINDOW WORD MODE: 4B word writes above 0x%x, halo zones %v", wall, zones)
+		case os.Getenv("AIC_WINDOW_16B") != "":
+			zones = protocol.CloneRegZones()
+			chunk = protocol.CloneSmallChunk
+			log.Printf("[AIC] REGISTER-WINDOW 16B MODE: %dB chunks above 0x%x", chunk, wall)
 		case os.Getenv("AIC_SKIP_WINDOW") != "":
 			zones = []protocol.SkipZone{{Start: wall, End: 0xFFFFFFFF}}
 			log.Printf("[AIC] REGISTER-WINDOW SKIP MODE: loading only the %d bytes below 0x%x (boot feasibility experiment)",
 				int(wall)-int(ramFMACFW), wall)
 		default:
 			zones = protocol.CloneRegZones()
+			chunk = protocol.BlockWriteChunkBytes
 		}
 		// Probe-driven zone overrides (hex): the wedge-zone boundaries
 		// past block2..4 are still being mapped. The ~9.1KB window-write
