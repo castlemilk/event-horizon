@@ -651,12 +651,12 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	var holes []uint32 // addresses whose readback never matched
 	writtenTotal := 0
 	lastMark := 0
-	portResetDone := false
+	lastResetAddr := uint32(0)
 
 	for i, op := range ops {
 		opStart := time.Now()
-		if op.Addr >= wall && !portResetDone {
-			log.Printf("[AIC] reached 0x%x boundary — performing USB port reset to clear endpoint FIFO budget", wall)
+		if op.Addr >= wall && (lastResetAddr == 0 || op.Addr-lastResetAddr >= 8*1024) {
+			log.Printf("[AIC] reached 0x%08x — performing USB port reset to clear endpoint FIFO budget", op.Addr)
 			if err := dev.ResetDevice(); err != nil {
 				log.Printf("[AIC] port reset warning: %v", err)
 			}
@@ -677,7 +677,7 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			}
 			protocol.SetTxLenConv(protocol.ConvLinux)
 			protocol.Drain(dev, 16)
-			portResetDone = true
+			lastResetAddr = op.Addr
 		}
 		if wordMode && len(op.Block) == 4 && op.Addr >= wall {
 			if err := protocol.MemWrite(dev, op.Addr, binary.LittleEndian.Uint32(op.Block)); err != nil {
