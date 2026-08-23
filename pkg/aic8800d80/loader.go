@@ -710,7 +710,7 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 		if os.Getenv("AIC_SKIP_PATCH_CONFIG") != "" {
 			log.Printf("[AIC] skipping patch config (AIC_SKIP_PATCH_CONFIG=1) — racing START_APP before the ROM dies")
 		} else {
-			if err := applyPatchConfig(dev, ramFMACFW, v3Profile); err != nil {
+			if err := applyPatchConfig(dev, ramFMACFW, fmac, v3Profile); err != nil {
 				return fmt.Errorf("patch config: %w", err)
 			}
 		}
@@ -980,7 +980,7 @@ func buildHybridOps(fmac []byte, ram, wall, windowEnd uint32, classes map[uint32
 	return ops
 }
 
-func applyPatchConfig(dev *protocol.USBDevice, ramFMACFW uint32, v3Profile bool) error {
+func applyPatchConfig(dev *protocol.USBDevice, ramFMACFW uint32, fmac []byte, v3Profile bool) error {
 	// patch_tbl_d80 with USE_5G (CONFIG_USE_5G=y in the vendor Makefile).
 	patchPairs := [][2]uint32{
 		{0x00b4, 0xf3010001},
@@ -1001,29 +1001,17 @@ func applyPatchConfig(dev *protocol.USBDevice, ramFMACFW uint32, v3Profile bool)
 		log.Printf("[AIC] V3 loader profile: fixed pair buffer 0x1D7000, %d pairs", len(patchPairs))
 	}
 
-	rdPatchAddr := ramFMACFW + 0x0198
-	configBase, err := protocol.MemRead(dev, rdPatchAddr)
-	if err != nil {
-		return fmt.Errorf("read config_base @0x%08x: %w", rdPatchAddr, err)
-	}
-	strBase, err := protocol.MemRead(dev, rdPatchAddr+8)
-	if err != nil {
-		return fmt.Errorf("read patch_str_base @0x%08x: %w", rdPatchAddr+8, err)
-	}
+	rdPatchOfst := 0x0198
+	configBase := binary.LittleEndian.Uint32(fmac[rdPatchOfst : rdPatchOfst+4])
+	strBase := binary.LittleEndian.Uint32(fmac[rdPatchOfst+8 : rdPatchOfst+12])
 	log.Printf("[AIC] patch config: base=0x%08x str=0x%08x", configBase, strBase)
 
 	if !v3Profile {
-		rdVersionAddr := ramFMACFW + 0x01C
-		rdVersion, err := protocol.MemRead(dev, rdVersionAddr)
-		if err != nil {
-			return fmt.Errorf("read fw version @0x%08x: %w", rdVersionAddr, err)
-		}
+		rdVersionOfst := 0x01C
+		rdVersion := binary.LittleEndian.Uint32(fmac[rdVersionOfst : rdVersionOfst+4])
 		log.Printf("[AIC] fw_version=0x%08x", rdVersion)
 		if rdVersion > 0x06090100 {
-			bufBase, err := protocol.MemRead(dev, rdPatchAddr+12)
-			if err != nil {
-				return fmt.Errorf("read patch buf base: %w", err)
-			}
+			bufBase := binary.LittleEndian.Uint32(fmac[rdPatchOfst+12 : rdPatchOfst+16])
 			startAddr = bufBase
 			patchAddr = bufBase
 		}
