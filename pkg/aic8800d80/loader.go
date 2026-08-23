@@ -1021,6 +1021,7 @@ func applyPatchConfig(dev *protocol.USBDevice, ramFMACFW uint32, fmac []byte, v3
 		if err := protocol.MemWrite(dev, addr, val); err != nil {
 			return fmt.Errorf("write 0x%08x=0x%08x: %w", addr, val, err)
 		}
+		time.Sleep(50 * time.Millisecond)
 		return nil
 	}
 	// offsetof(aic_patch_t): magic_num@0 pair_start@4 magic_num_2@8
