@@ -121,9 +121,9 @@ func CloneRegZones() []SkipZone {
 	zones := []SkipZone{
 		{Start: 0x170180, End: 0x170280},
 		{Start: 0x172380, End: 0x1724a0},
+		{Start: 0x173000, End: 0x173400},
 		{Start: 0x174580, End: 0x1746a0},
 		{Start: 0x176780, End: 0x1768a0},
-		{Start: 0x173080, End: 0x173100},
 	}
 	return zones
 }
