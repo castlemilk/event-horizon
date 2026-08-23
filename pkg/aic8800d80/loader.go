@@ -660,13 +660,18 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			if err := dev.ResetDevice(); err != nil {
 				log.Printf("[AIC] port reset warning: %v", err)
 			}
-			time.Sleep(600 * time.Millisecond)
+			dev.ReleaseInterface(0)
+			dev.Close()
+			time.Sleep(1500 * time.Millisecond)
 			nd, oerr := protocol.OpenByVIDPID(c, protocol.VID_AIC8800D80_BootROM, protocol.PID_AIC8800D80_BootROM)
 			if oerr != nil {
 				return fmt.Errorf("reopen boot ROM after port reset: %w", oerr)
 			}
 			dev = nd
 			devReleased = false
+			if err := dev.DetachKernelDriver(0); err != nil {
+				log.Printf("[AIC] detach kernel driver after port reset: %v", err)
+			}
 			if cerr := dev.ClaimInterface(0); cerr != nil {
 				return fmt.Errorf("claim interface after port reset: %w", cerr)
 			}
