@@ -574,15 +574,10 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			zones = protocol.CloneRegZones()
 			chunk = protocol.BlockWriteChunkBytes
 			log.Printf("[AIC] REGISTER-WINDOW 1KB MODE: %dB chunks above 0x%x, halo zones %v", chunk, wall, zones)
-		case os.Getenv("AIC_CLONE_ZONES") != "":
+		case os.Getenv("AIC_WINDOW_1KB") != "":
 			zones = protocol.CloneRegZones()
-			chunk = protocol.CloneSmallChunk
-			log.Printf("[AIC] CLONE ZONES EXPERIMENT: %dB chunks, halo zones %v", chunk, zones)
-		case os.Getenv("AIC_WINDOW_WORD") != "":
-			zones = protocol.CloneRegZones()
-			chunk = 4
-			wordMode = true
-			log.Printf("[AIC] REGISTER-WINDOW WORD MODE: 4B word writes above 0x%x, halo zones %v", wall, zones)
+			chunk = protocol.BlockWriteChunkBytes
+			log.Printf("[AIC] REGISTER-WINDOW 1KB MODE: %dB chunks above 0x%x, halo zones %v", chunk, wall, zones)
 		case os.Getenv("AIC_WINDOW_16B") != "":
 			zones = protocol.CloneRegZones()
 			chunk = protocol.CloneSmallChunk
@@ -592,8 +587,10 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			log.Printf("[AIC] REGISTER-WINDOW SKIP MODE: loading only the %d bytes below 0x%x (boot feasibility experiment)",
 				int(wall)-int(ramFMACFW), wall)
 		default:
-			zones = nil
-			chunk = protocol.BlockWriteChunkBytes
+			zones = protocol.CloneRegZones()
+			chunk = 4
+			wordMode = true
+			log.Printf("[AIC] DEFAULT MODE: 1KB block writes below 0x%x, 4B word writes above with USB descriptor zones skipped", wall)
 		}
 		// Probe-driven zone overrides (hex): the wedge-zone boundaries
 		// past block2..4 are still being mapped. The ~9.1KB window-write
