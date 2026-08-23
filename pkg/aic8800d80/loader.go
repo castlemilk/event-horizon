@@ -674,6 +674,9 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 				return fmt.Errorf("upload fmacfw: op %d/%d (0x%08x, %dB): %w", i+1, len(ops), op.Addr, len(op.Block), err)
 			}
 		}
+		if op.Addr >= wall {
+			time.Sleep(2 * time.Millisecond)
+		}
 		writtenTotal += len(op.Block)
 		res.BytesUploaded += len(op.Block)
 		if writtenTotal-lastMark >= 64*1024 {
