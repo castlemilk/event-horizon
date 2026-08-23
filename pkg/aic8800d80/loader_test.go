@@ -23,11 +23,11 @@ func TestBundleNameFor_AllRevs(t *testing.T) {
 		{protocol.ChipRevU01, "patch_table", "fw_patch_table_8800d80.bin"},
 		{protocol.ChipRevU02, "adid", "fw_adid_8800d80_u02.bin"},
 		{protocol.ChipRevU02, "patch", "fw_patch_8800d80_u02.bin"},
-		{protocol.ChipRevU02, "fmacfw", "fmacfw_8800d80_u02.bin"},
+		{protocol.ChipRevU02, "fmacfw", "fmacfw_8800d80_u02_ipc.bin"},
 		{protocol.ChipRevU02, "patch_table", "fw_patch_table_8800d80_u02.bin"},
 		{protocol.ChipRevU03, "adid", "fw_adid_8800d80_u02.bin"},
-		{protocol.ChipRevU03, "fmacfw", "fmacfw_8800d80_u02.bin"},
-		{protocol.ChipRevU04, "fmacfw", "fmacfw_8800d80_u02.bin"},
+		{protocol.ChipRevU03, "fmacfw", "fmacfw_8800d80_u02_ipc.bin"},
+		{protocol.ChipRevU04, "fmacfw", "fmacfw_8800d80_u02_ipc.bin"},
 		{protocol.ChipRevU05, "patch", "fw_patch_8800d80_u02.bin"},
 	}
 	for _, c := range cases {
