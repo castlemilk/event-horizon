@@ -33,6 +33,8 @@ const (
 	MMStartCfm   uint16 = 0x0003
 	MMVersionReq uint16 = 0x0004
 	MMVersionCfm uint16 = 0x0005
+	MMAddIfReq   uint16 = 0x0006
+	MMAddIfCfm   uint16 = 0x0007
 )
 
 // DBG task messages (TASK_DBG = 1). The host uses DBG_MEM_* during the boot

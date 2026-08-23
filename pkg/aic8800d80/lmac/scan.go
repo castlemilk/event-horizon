@@ -1,7 +1,6 @@
 package lmac
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 )
@@ -208,31 +207,42 @@ type ScanResultInd struct {
 }
 
 func (r *ScanResultInd) Decode(payload []byte) error {
-	// Layout (struct scan_result in lmac_msg.h):
-	//   u32 channel;
-	//   u8 band; u8 width; u16 padding;
-	//   u8 rssi; u8 rssi_min; u8 rssi_max; u8 padding;
-	//   u8 bssid[6]; u8 padding[2];
-	//   u16 ie_len; u8 ie[ie_len];
-	//   struct mac_ssid ssid; // u8 len + 31 bytes
-	if len(payload) < 24 {
+	// Layout (struct scanu_result_ind in lmac_msg.h):
+	//   u16 length; u16 framectrl; u16 center_freq; u8 band; u8 sta_idx; u8 inst_nbr; s8 rssi; u16 pad;
+	//   u32 payload[]: raw 802.11 management frame body starting after framectrl:
+	//     u16 duration; u8 da[6]; u8 sa[6]; u8 bssid[6]; u16 seq_ctrl;
+	//     u64 timestamp; u16 beacon_int; u16 capab_info; u8 ies[];
+	if len(payload) < 12 {
 		return fmt.Errorf("scan result: short payload (%d)", len(payload))
 	}
-	r.Channel = uint16(binary.LittleEndian.Uint32(payload[0:4]))
-	r.Band = payload[4]
-	r.Width = payload[5]
-	r.RSSI = int8(payload[8])
-	r.RSSIMin = int8(payload[9])
-	r.RSSIMax = int8(payload[10])
-	copy(r.BSSID[:], payload[12:18])
-	ieLen := int(binary.LittleEndian.Uint16(payload[20:22]))
-	if 22+ieLen+32 > len(payload) {
-		return fmt.Errorf("scan result: short IE/SSID tail (%d)", len(payload))
+	frameLen := int(binary.LittleEndian.Uint16(payload[0:2]))
+	freq := binary.LittleEndian.Uint16(payload[4:6])
+	r.Band = payload[6]
+	r.RSSI = int8(payload[9])
+	r.Channel = uint16(FreqToChannel(r.Band, freq))
+
+	mgmt := payload[12:]
+	if len(mgmt) >= 20 {
+		copy(r.BSSID[:], mgmt[14:20])
 	}
-	r.IE = append([]byte(nil), payload[22:22+ieLen]...)
-	ssidSlot := payload[22+ieLen : 22+ieLen+32]
-	if ssidSlot[0] > 0 && int(ssidSlot[0]) <= 31 {
-		r.SSID = string(bytes.TrimRight(ssidSlot[1:1+ssidSlot[0]], "\x00"))
+	if len(mgmt) >= 34 {
+		ies := mgmt[34:]
+		if frameLen > 34 && frameLen-34 <= len(ies) {
+			ies = ies[:frameLen-34]
+		}
+		r.IE = append([]byte(nil), ies...)
+		for off := 0; off+2 <= len(ies); {
+			tag := ies[off]
+			tlen := int(ies[off+1])
+			if off+2+tlen > len(ies) {
+				break
+			}
+			if tag == 0 { // 802.11 SSID element
+				r.SSID = string(ies[off+2 : off+2+tlen])
+				break
+			}
+			off += 2 + tlen
+		}
 	}
 	return nil
 }

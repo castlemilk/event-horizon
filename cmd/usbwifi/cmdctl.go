@@ -100,6 +100,15 @@ func openSession(ctx context.Context) (*session, error) {
 			fmt.Printf("  features=0x%08x max_sta=%d max_vif=%d\n",
 				c.Features, c.MaxStaNb, c.MaxVifNb)
 		},
+		OnStartCfm: func() {
+			fmt.Printf("  MM_START_CFM: MAC/PHY subsystem started\n")
+		},
+		OnAddIfCfm: func(c lmac.AddIfCfm) {
+			fmt.Printf("  MM_ADD_IF_CFM: status=%d vif_index=%d\n", c.Status, c.InstNbr)
+		},
+		OnResetCfm: func() {
+			fmt.Printf("  MM_RESET_CFM: MAC reset completed\n")
+		},
 		OnAnyUnknown: func(msgID uint16, _ []byte) {
 			log.Printf("unhandled msg id 0x%04x", msgID)
 		},
@@ -198,7 +207,44 @@ func runCmdSend(ctx context.Context, args []string) int {
 		time.Sleep(200 * time.Millisecond)
 		return 0
 
+	case "mm_reset_req":
+		subCtx, cancel := context.WithTimeout(ctx, *timeout)
+		defer cancel()
+		if err := s.submitter.Submit(subCtx, lmac.ResetReq{}); err != nil {
+			log.Printf("submit mm_reset_req: %v", err)
+			return 1
+		}
+		time.Sleep(200 * time.Millisecond)
+		return 0
+
+	case "mm_start_req":
+		subCtx, cancel := context.WithTimeout(ctx, *timeout)
+		defer cancel()
+		if err := s.submitter.Submit(subCtx, &lmac.StartReq{}); err != nil {
+			log.Printf("submit mm_start_req: %v", err)
+			return 1
+		}
+		time.Sleep(200 * time.Millisecond)
+		return 0
+
+	case "mm_add_if_req":
+		subCtx, cancel := context.WithTimeout(ctx, *timeout)
+		defer cancel()
+		if err := s.submitter.Submit(subCtx, &lmac.AddIfReq{Type: 1}); err != nil {
+			log.Printf("submit mm_add_if_req: %v", err)
+			return 1
+		}
+		time.Sleep(200 * time.Millisecond)
+		return 0
+
 	case "scan_start_req":
+		subCtx, cancel := context.WithTimeout(ctx, *timeout)
+		defer cancel()
+
+		// 1. Ensure MAC/PHY subsystem is started and a VIF exists.
+		_ = s.submitter.Submit(subCtx, &lmac.StartReq{})
+		_ = s.submitter.Submit(subCtx, &lmac.AddIfReq{Type: 1})
+
 		var chans []lmac.ChannelInfo
 		for _, c := range strings.Split(*channels, ",") {
 			v, err := strconv.Atoi(strings.TrimSpace(c))
@@ -225,8 +271,6 @@ func runCmdSend(ctx context.Context, args []string) int {
 		if *ssid != "" {
 			req.SSIDs = []string{*ssid}
 		}
-		subCtx, cancel := context.WithTimeout(ctx, *timeout)
-		defer cancel()
 		fmt.Printf("scanning band=%s channels=%s ...\n", *band, *channels)
 		if err := s.submitter.Submit(subCtx, req); err != nil {
 			log.Printf("submit scan_start_req: %v", err)
@@ -240,7 +284,7 @@ func runCmdSend(ctx context.Context, args []string) int {
 		return 0
 
 	default:
-		fmt.Fprintf(os.Stderr, "send: unknown message %q\n", args[0])
+		fmt.Fprintf(os.Stderr, "send: unknown message %q (supported: mm_version_req, mm_reset_req, mm_start_req, mm_add_if_req, scan_start_req)\n", args[0])
 		return 1
 	}
 }

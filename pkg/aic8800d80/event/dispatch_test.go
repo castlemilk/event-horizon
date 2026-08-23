@@ -18,14 +18,28 @@ func TestDispatchRoutesScanResult(t *testing.T) {
 		got = r
 		seen = true
 	}}
-	// Build a valid SCANU_RESULT_IND payload (24-byte fixed header + ie + ssid slot).
-	payload := make([]byte, 24+0+32)
-	payload[0] = 0x07 // channel (u32 LE = 7)
-	payload[8] = 0xC4 // rssi = -60
-	// ie_len = 0 (already zero)
-	// ssid slot at offset 22: len=5 + "hello"
-	payload[22] = 5
-	copy(payload[23:28], []byte("hello"))
+	// Build a valid SCANU_RESULT_IND payload (struct scanu_result_ind).
+	payload := []byte{
+		41, 0x00, // length
+		0x80, 0x00, // framectrl
+		0x8a, 0x09, // center_freq = 2442 (ch 7)
+		0x00,       // band = 0
+		0xFF,       // sta_idx
+		0x00,       // inst_nbr
+		0xC4,       // rssi = -60
+		0x00, 0x00, // pad
+		// mgmt frame body at offset 12:
+		0x00, 0x00, // duration
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // DA
+		0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, // SA
+		0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, // BSSID
+		0x00, 0x00, // seq_ctrl
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // timestamp (8)
+		0x64, 0x00, // beacon_int (2)
+		0x01, 0x00, // capab (2)
+		// IEs (offset 34 in mgmt):
+		0x00, 0x05, 'h', 'e', 'l', 'l', 'o', // Tag 0: SSID "hello"
+	}
 	if err := d.Handle(context.Background(), lmac.SCANUResultInd, payload); err != nil {
 		t.Fatal(err)
 	}

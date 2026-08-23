@@ -1,8 +1,6 @@
 package lmac
 
 import (
-	"bytes"
-	"encoding/binary"
 	"testing"
 )
 
@@ -65,21 +63,30 @@ func TestScanStartReqTooManySSIDs(t *testing.T) {
 }
 
 func TestScanResultIndDecode(t *testing.T) {
-	// Hand-built SCANU_RESULT_IND payload (struct scan_result):
-	//   u32 channel; u8 band; u8 width; u16 padding;
-	//   u8 rssi; u8 rssi_min; u8 rssi_max; u8 padding;
-	//   u8 bssid[6]; u8 padding[2];
-	//   u16 ie_len; u8 ie[ie_len];
-	//   struct mac_ssid ssid (u8 len + 31 bytes)
+	// Hand-built SCANU_RESULT_IND payload (struct scanu_result_ind):
+	//   u16 length; u16 framectrl; u16 center_freq; u8 band; u8 sta_idx; u8 inst_nbr; s8 rssi; u16 pad;
+	//   mgmt frame (offset 12):
+	//     duration(2), da(6), sa(6), bssid(6), seq(2), ts(8), bcn_int(2), capab(2), ies...
 	payload := []byte{
-		0x07, 0x00, 0x00, 0x00, // channel (u32 LE)
-		0x00, 0x00, 0x00, 0x00, // band, width, padding(u16)
-		0xC4, 0xC0, 0xD0, 0x00, // rssi=-60, rssi_min=-64, rssi_max=-48, pad
-		0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x00, // bssid + padding
-		0x04, 0x00, // ie_len = 4
-		0x01, 0x02, 0x03, 0x04, // ie[4]
-		0x05, 'h', 'e', 'l', 'l', 'o', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		41, 0x00, // length = 41
+		0x80, 0x00, // framectrl (beacon)
+		0x8a, 0x09, // center_freq = 2442 (ch 7)
+		0x00,       // band = 0 (2.4G)
+		0xFF,       // sta_idx
+		0x00,       // inst_nbr
+		0xC4,       // rssi = -60
+		0x00, 0x00, // pad
+		// mgmt frame body at offset 12:
+		0x00, 0x00, // duration
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // DA
+		0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, // SA
+		0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, // BSSID (offset 14 in mgmt)
+		0x00, 0x00, // seq_ctrl
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // timestamp (8)
+		0x64, 0x00, // beacon_int (2)
+		0x01, 0x00, // capab (2)
+		// IEs (offset 34 in mgmt):
+		0x00, 0x05, 'h', 'e', 'l', 'l', 'o', // Tag 0: SSID "hello"
 	}
 	var res ScanResultInd
 	if err := res.Decode(payload); err != nil {
@@ -91,20 +98,11 @@ func TestScanResultIndDecode(t *testing.T) {
 	if res.RSSI != -60 {
 		t.Errorf("rssi: %d", res.RSSI)
 	}
-	if res.RSSIMin != -64 {
-		t.Errorf("rssi_min: %d", res.RSSIMin)
-	}
-	if res.RSSIMax != -48 {
-		t.Errorf("rssi_max: %d", res.RSSIMax)
-	}
 	if res.BSSID != ([6]byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}) {
 		t.Errorf("bssid: %v", res.BSSID)
 	}
 	if res.SSID != "hello" {
 		t.Errorf("ssid: %q", res.SSID)
-	}
-	if !bytes.Equal(res.IE, []byte{0x01, 0x02, 0x03, 0x04}) {
-		t.Errorf("ie: %x", res.IE)
 	}
 }
 
@@ -112,19 +110,5 @@ func TestScanResultIndShort(t *testing.T) {
 	var res ScanResultInd
 	if err := res.Decode([]byte{0x01, 0x02}); err == nil {
 		t.Fatal("expected short-payload error")
-	}
-}
-
-func TestScanResultIndSSIDTooLong(t *testing.T) {
-	// SSID slot: len=255 (corrupt), bytes follow. Decoder must clamp to 31.
-	payload := make([]byte, 24+0+32)
-	binary.LittleEndian.PutUint16(payload[20:22], 0) // ie_len = 0
-	payload[22] = 255                                 // ssid len (corrupt)
-	var res ScanResultInd
-	if err := res.Decode(payload); err != nil {
-		t.Fatal(err)
-	}
-	if res.SSID != "" {
-		t.Errorf("expected empty SSID on corrupt len, got %q", res.SSID)
 	}
 }

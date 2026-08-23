@@ -13,6 +13,9 @@ type Dispatch struct {
 	OnScanResult   func(lmac.ScanResultInd)
 	OnScanStartCfm func(lmac.ScanStartCfm)
 	OnVersion      func(lmac.VersionCfm)
+	OnStartCfm    func()
+	OnAddIfCfm    func(lmac.AddIfCfm)
+	OnResetCfm    func()
 	OnAnyUnknown   func(msgID uint16, payload []byte)
 }
 
@@ -50,6 +53,27 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 			return nil
 		}
 		d.OnVersion(c)
+		return nil
+	case lmac.MMStartCfm:
+		if d.OnStartCfm != nil {
+			d.OnStartCfm()
+		}
+		return nil
+	case lmac.MMAddIfCfm:
+		if d.OnAddIfCfm == nil {
+			return nil
+		}
+		var c lmac.AddIfCfm
+		if err := c.Decode(payload); err != nil {
+			log.Printf("[dispatch] add if cfm decode: %v", err)
+			return nil
+		}
+		d.OnAddIfCfm(c)
+		return nil
+	case lmac.MMResetCfm:
+		if d.OnResetCfm != nil {
+			d.OnResetCfm()
+		}
 		return nil
 	default:
 		if d.OnAnyUnknown != nil {
