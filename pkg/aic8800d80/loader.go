@@ -1012,8 +1012,12 @@ func applyPatchConfig(dev *protocol.USBDevice, ramFMACFW uint32, fmac []byte, v3
 		log.Printf("[AIC] fw_version=0x%08x", rdVersion)
 		if rdVersion > 0x06090100 {
 			bufBase := binary.LittleEndian.Uint32(fmac[rdPatchOfst+12 : rdPatchOfst+16])
-			startAddr = bufBase
-			patchAddr = bufBase
+			if bufBase >= 0x001D0000 {
+				startAddr = bufBase
+				patchAddr = bufBase
+			} else {
+				log.Printf("[AIC] patch bufBase 0x%08x is in register space (<0x1D0000); using safe SRAM buffer 0x%08x", bufBase, startAddr)
+			}
 		}
 	}
 
