@@ -53,6 +53,7 @@ func printEnvDiagnostics() {
 func runAICLoader(args []string) int {
 	fs := flag.NewFlagSet("aicloader", flag.ExitOnError)
 	firmwareDir := fs.String("firmware-dir", "", "Directory containing the firmware blobs (default: ~/.event-horizon/firmware/aic8800D80)")
+	bootType := fs.Int("boot-type", 1, "HOST_START_APP boot type: 1=AUTO, 2=CUSTOM, 3=REBOOT, 4=FNCALL, 5=DUMMY")
 	statusOnly := fs.Bool("status", false, "Detect current stage and exit without uploading firmware")
 	debug := fs.Bool("debug", false, "Verbose USB transfer logging")
 	killDaemon := fs.Bool("kill-daemon", false, "Stop the running usbwifi daemon before opening the device (avoids LIBUSB_ERROR_NOT_FOUND on macOS USB exclusive ownership)")
@@ -150,6 +151,9 @@ func runAICLoader(args []string) int {
 	}
 	if *firmwareDir != "" {
 		opts = append(opts, aic8800d80.WithFirmwareDir(*firmwareDir))
+	}
+	if *bootType != 0 {
+		opts = append(opts, aic8800d80.WithBootType(uint32(*bootType)))
 	}
 	loader := aic8800d80.NewLoader(opts...)
 

@@ -69,6 +69,8 @@ const (
 	HostStartAppAuto   uint32 = 1
 	HostStartAppCustom uint32 = 2
 	HostStartAppReboot uint32 = 3
+	HostStartAppFNCall uint32 = 4
+	HostStartAppDummy  uint32 = 5
 )
 
 // AIC8800D80 firmware blob file names. Required for ADID / PATCH / fmacfw /

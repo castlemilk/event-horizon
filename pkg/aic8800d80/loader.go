@@ -32,8 +32,9 @@ import (
 // concurrently from multiple goroutines; the underlying libusb context
 // is initialised once and reused.
 type Loader struct {
-	fwDir string
-	debug bool
+	fwDir    string
+	debug    bool
+	bootType uint32
 
 	mu sync.Mutex
 }
@@ -52,10 +53,16 @@ func WithFirmwareDir(dir string) LoaderOption {
 	return func(l *Loader) { l.fwDir = dir }
 }
 
+// WithBootType sets the HOST_START_APP boot type (1=AUTO, 2=CUSTOM, 3=REBOOT, 4=FNCALL, 5=DUMMY).
+func WithBootType(bt uint32) LoaderOption {
+	return func(l *Loader) { l.bootType = bt }
+}
+
 // NewLoader creates a new loader.
 func NewLoader(opts ...LoaderOption) *Loader {
 	l := &Loader{
-		fwDir: defaultFirmwareDir(),
+		fwDir:    defaultFirmwareDir(),
+		bootType: protocol.HostStartAppAuto,
 	}
 	for _, o := range opts {
 		o(l)
@@ -839,8 +846,17 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 		log.Printf("[AIC] SRAM survival check — run: sudo ./bin/usbwifi aicloader --kill-daemon --probe")
 		return nil
 	}
-	log.Printf("[AIC] starting firmware at 0x%x", ramFMACFW)
-	if err := protocol.StartApp(dev, ramFMACFW, protocol.HostStartAppAuto); err != nil {
+	bootType := l.bootType
+	if bootType == 0 {
+		bootType = protocol.HostStartAppAuto
+	}
+	if os.Getenv("AIC_BOOT_TYPE") != "" {
+		if v, err := strconv.ParseUint(os.Getenv("AIC_BOOT_TYPE"), 0, 32); err == nil {
+			bootType = uint32(v)
+		}
+	}
+	log.Printf("[AIC] starting firmware at 0x%x (boottype=%d)", ramFMACFW, bootType)
+	if err := protocol.StartApp(dev, ramFMACFW, bootType); err != nil {
 		return fmt.Errorf("start app: %w", err)
 	}
 	res.ToStage = protocol.StageOperational
@@ -1036,7 +1052,15 @@ func applyPatchConfig(dev *protocol.USBDevice, ramFMACFW uint32, fmac []byte, v3
 		if err := protocol.MemWrite(dev, addr, val); err != nil {
 			return fmt.Errorf("write 0x%08x=0x%08x: %w", addr, val, err)
 		}
-		time.Sleep(50 * time.Millisecond)
+		got, rerr := protocol.MemRead(dev, addr)
+		if rerr != nil {
+			log.Printf("[AIC] verify 0x%08x write read error: %v", addr, rerr)
+		} else if got != val {
+			log.Printf("[AIC] verify MISMATCH at 0x%08x: got 0x%08x, want 0x%08x", addr, got, val)
+		} else {
+			log.Printf("[AIC] verify OK: 0x%08x = 0x%08x", addr, got)
+		}
+		time.Sleep(20 * time.Millisecond)
 		return nil
 	}
 
