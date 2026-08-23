@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/protocol"
 )
 
@@ -38,12 +39,13 @@ func (l *Loop) Run(ctx context.Context) error {
 			// v1: data frames are out of scope (sub-project C). Drop with debug log.
 			continue
 		}
-		if len(f.Payload) < 2 {
+		if len(f.Payload) < lmac.HeaderSize {
 			log.Printf("[event] short config frame (%d bytes), dropping", len(f.Payload))
 			continue
 		}
 		msgID := f.MsgID()
-		if err := l.sink.Handle(ctx, msgID, f.Payload); err != nil {
+		param := f.Payload[lmac.HeaderSize:]
+		if err := l.sink.Handle(ctx, msgID, param); err != nil {
 			if _, ok := err.(*Fatal); ok {
 				return fmt.Errorf("event loop fatal: %w", err)
 			}

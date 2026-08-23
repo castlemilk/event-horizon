@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/protocol"
 )
 
@@ -116,7 +117,7 @@ func TestLoopSkipsDataFrames(t *testing.T) {
 }
 
 func makeMsgIDPayload(id uint16) []byte {
-	b := make([]byte, 4)
+	b := make([]byte, lmac.HeaderSize)
 	binary.LittleEndian.PutUint16(b[0:2], id)
 	return b
 }
