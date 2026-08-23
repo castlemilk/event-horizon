@@ -423,6 +423,10 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 		log.Printf("[AIC] mcu1 cache fix: 0x40100020 = 0x%08x | 0x01 = 0x%08x", cacheReg, cacheReg|0x01)
 	}
 
+	// Stop hardware watchdogs (syscfg_tbl_8800d80) so the chip doesn't reset mid-download
+	_ = protocol.MemWrite(dev, 0x70001408, 0x00000000)
+	_ = protocol.MemWrite(dev, 0x50017008, 0x00000000)
+
 	// Load firmware blobs.
 	bundle, err := protocol.LoadFirmwareBundle(l.fwDir, chipID)
 	if err != nil {
