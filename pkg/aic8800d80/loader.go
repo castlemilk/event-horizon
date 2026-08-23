@@ -1026,12 +1026,9 @@ func applyPatchConfig(dev *protocol.USBDevice, ramFMACFW uint32, fmac []byte, v3
 		log.Printf("[AIC] fw_version=0x%08x", rdVersion)
 		if rdVersion > 0x06090100 {
 			bufBase := binary.LittleEndian.Uint32(fmac[rdPatchOfst+12 : rdPatchOfst+16])
-			if bufBase >= 0x001D0000 {
-				startAddr = bufBase
-				patchAddr = bufBase
-			} else {
-				log.Printf("[AIC] patch bufBase 0x%08x is in register space (<0x1D0000); using safe SRAM buffer 0x%08x", bufBase, startAddr)
-			}
+			startAddr = bufBase
+			patchAddr = bufBase
+			log.Printf("[AIC] patch bufBase=0x%08x", bufBase)
 		}
 	}
 
@@ -1042,6 +1039,12 @@ func applyPatchConfig(dev *protocol.USBDevice, ramFMACFW uint32, fmac []byte, v3
 		time.Sleep(50 * time.Millisecond)
 		return nil
 	}
+
+	// Stop PMIC watchdog (syscfg_tbl_8800d80: 0x70001408 = 0)
+	if err := w(0x70001408, 0x00000000); err != nil {
+		log.Printf("[AIC] stop PMIC watchdog warning: %v (ignoring)", err)
+	}
+
 	// offsetof(aic_patch_t): magic_num@0 pair_start@4 magic_num_2@8
 	// pair_count@12 block_size[0]@48
 	if err := w(strBase+0, 0x48435450); err != nil { // "PTCH"
