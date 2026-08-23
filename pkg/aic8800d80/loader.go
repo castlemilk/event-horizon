@@ -707,12 +707,12 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	// register-window write (the ~9.1KB budget), so the descriptor
 	// write would time out — skip it and race START_APP in instead.
 	if chipID != protocol.ChipRevU01 {
-		if os.Getenv("AIC_SKIP_PATCH_CONFIG") != "" {
-			log.Printf("[AIC] skipping patch config (AIC_SKIP_PATCH_CONFIG=1) — racing START_APP before the ROM dies")
-		} else {
+		if os.Getenv("AIC_APPLY_PATCH_CONFIG") != "" {
 			if err := applyPatchConfig(dev, ramFMACFW, fmac, v3Profile); err != nil {
-				return fmt.Errorf("patch config: %w", err)
+				log.Printf("[AIC] patch config warning: %v (ignoring)", err)
 			}
+		} else {
+			log.Printf("[AIC] skipping patch config (built-in binary descriptor active) — executing START_APP")
 		}
 	}
 
