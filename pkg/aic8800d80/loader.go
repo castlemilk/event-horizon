@@ -651,9 +651,6 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	var holes []uint32 // addresses whose readback never matched
 	writtenTotal := 0
 	lastMark := 0
-	windowBytesWritten := 0
-	const windowFlushThreshold = 4 * 1024               // 4KB write budget per burst
-	const windowFlushDuration = 1200 * time.Millisecond // 1.2s to drain dirty write cache
 
 	for i, op := range ops {
 		opStart := time.Now()
@@ -667,14 +664,7 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			}
 		}
 		if op.Addr >= wall {
-			windowBytesWritten += len(op.Block)
-			if windowBytesWritten >= windowFlushThreshold {
-				windowBytesWritten = 0
-				log.Printf("[AIC] window dirty cache flush (1.2s pause at 0x%08x, op %d/%d)", op.Addr, i+1, len(ops))
-				time.Sleep(windowFlushDuration)
-			} else {
-				time.Sleep(3 * time.Millisecond)
-			}
+			time.Sleep(100 * time.Millisecond)
 		}
 		writtenTotal += len(op.Block)
 		res.BytesUploaded += len(op.Block)
