@@ -1102,10 +1102,7 @@ func bundleNameFor(chipID uint8, kind string) (string, error) {
 		return protocol.FWPatchBaseName8800D80, nil
 	case "fmacfw":
 		if usesU02 {
-			if os.Getenv("AIC_FMACFW_RAW") != "" {
-				return protocol.FWBaseName8800D80U02, nil
-			}
-			return "fmacfw_8800d80_u02_ipc.bin", nil
+			return protocol.FWBaseName8800D80U02, nil
 		}
 		return protocol.FWBaseName8800D80, nil
 	case "patch_table":
