@@ -995,11 +995,11 @@ func buildHybridOps(fmac []byte, ram, wall, windowEnd uint32, classes map[uint32
 }
 
 func applyPatchConfig(dev *protocol.USBDevice, ramFMACFW uint32, fmac []byte, v3Profile bool) error {
-	// patch_tbl_d80 with USE_5G (CONFIG_USE_5G=y in the vendor Makefile).
+	// patch_tbl_d80 2.4G base (AIC8800D80 is single-band 2.4GHz 802.11ax)
 	patchPairs := [][2]uint32{
-		{0x00b4, 0xf3010001},
+		{0x00b4, 0xf3010000},
 		{0x0170, 0x0001000A}, // rx aggr counter
-		{0x0188, 0x01},       // user_ext_flags: PWROFST_COVER_CALIB
+		{0x0188, 0x00000000}, // user_ext_flags
 	}
 	startAddr := uint32(0x001D7000)
 	patchAddr := startAddr
