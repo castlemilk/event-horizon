@@ -87,7 +87,7 @@ func TestDispatchRoutesVersionCfm(t *testing.T) {
 func TestDispatchUnknownMsgID(t *testing.T) {
 	var called bool
 	d := &Dispatch{OnAnyUnknown: func(_ uint16, _ []byte) { called = true }}
-	if err := d.Handle(context.Background(), 0xFFFF, []byte{}); err != nil {
+	if err := d.Handle(context.Background(), 0xBEEF, []byte{}); err != nil {
 		t.Fatal(err)
 	}
 	if !called {

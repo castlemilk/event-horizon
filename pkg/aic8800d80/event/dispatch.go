@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
+	"github.com/castlemilk/event-horizon/pkg/wifi"
 )
 
 // Dispatch is the default Sink: routes known msg ids to typed decoders.
@@ -22,6 +23,24 @@ type Dispatch struct {
 
 func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error {
 	switch msgID {
+	case 0xFFFF:
+		if len(payload) > 60 {
+			raw80211 := payload[60:]
+			rssi := int8(payload[11])
+			if frame, err := wifi.ParseFrame(raw80211, rssi); err == nil {
+				if ap, err := frame.ParseBeacon(); err == nil && d.OnScanResult != nil {
+					var bssid [6]byte
+					copy(bssid[:], frame.Address3[:])
+					d.OnScanResult(lmac.ScanResultInd{
+						SSID:    ap.SSID,
+						BSSID:   bssid,
+						Channel: uint16(ap.Channel),
+						RSSI:    ap.RSSI,
+					})
+				}
+			}
+		}
+		return nil
 	case lmac.SCANUResultInd:
 		if d.OnScanResult == nil {
 			return nil

@@ -36,7 +36,9 @@ func (l *Loop) Run(ctx context.Context) error {
 			return nil
 		}
 		if !f.IsConfig() {
-			// v1: data frames are out of scope (sub-project C). Drop with debug log.
+			if l.sink != nil && len(f.Payload) > 60 {
+				_ = l.sink.Handle(ctx, 0xFFFF, f.Payload)
+			}
 			continue
 		}
 		if len(f.Payload) < lmac.HeaderSize {
