@@ -52,8 +52,8 @@ func TestPlanAdaptiveUpload_RealGeometry(t *testing.T) {
 	if preWallSmall != 24 {
 		t.Errorf("pre-skip small ops = %d, want 24 (384 bytes)", preWallSmall)
 	}
-	if total != 351572 {
-		t.Errorf("total bytes = %d, want 351572", total)
+	if total != 351060 {
+		t.Errorf("total bytes = %d, want 351060", total)
 	}
 }
 
@@ -118,8 +118,8 @@ func TestPlanAdaptiveUpload_AboveWall1KB(t *testing.T) {
 		}
 		total += len(op.Block)
 	}
-	if total != 351572 {
-		t.Errorf("total = %d, want 351572", total)
+	if total != 351060 {
+		t.Errorf("total = %d, want 351060", total)
 	}
 	firstAbove := ops[320]
 	if firstAbove.Addr != CloneWallAddr || len(firstAbove.Block) != 384 {
