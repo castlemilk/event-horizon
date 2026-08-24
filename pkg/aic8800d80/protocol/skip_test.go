@@ -107,7 +107,7 @@ func TestMemBlockWriteAllSkipping_Layout(t *testing.T) {
 // 80-byte register zones.
 func TestMemBlockWriteAllSkipping_CoversBoundaries(t *testing.T) {
 	addr := uint32(0x120000)
-	blob := make([]byte, 358072)
+	blob := make([]byte, 351828)
 	zones := CloneRegZones()
 
 	// The first block falls inside chunk #320 (0x170000..0x1703ff).
@@ -190,8 +190,8 @@ func TestMemBlockWriteAllSkipping_CoversBoundaries(t *testing.T) {
 	if !postOK {
 		t.Error("post-skip run does not start at the first zone end")
 	}
-	if total != 356984 {
-		t.Errorf("total = %d, want 356984", total)
+	if total != 351572 {
+		t.Errorf("total = %d, want 351572", total)
 	}
 }
 
@@ -201,7 +201,7 @@ func TestMemBlockWriteAllSkipping_CoversBoundaries(t *testing.T) {
 // upload that respects the skip zones completes with zero protected
 // hits; a naive full-block upload hits the protection.
 func TestMockUpload_SkipRange(t *testing.T) {
-	fw := make([]byte, 358072)
+	fw := make([]byte, 351828)
 	for i := range fw {
 		fw[i] = byte(i)
 	}
@@ -240,8 +240,8 @@ func TestMockUpload_SkipRange(t *testing.T) {
 		t.Fatalf("skipping upload hit protected words: %v", skipping.oobWrites)
 	}
 	// And it placed everything except the zones.
-	if len(skipping.ram) != 356984/4 {
-		t.Errorf("ram words = %d, want %d", len(skipping.ram), 356984/4)
+	if len(skipping.ram) != 351572/4 {
+		t.Errorf("ram words = %d, want %d", len(skipping.ram), 351572/4)
 	}
 	// Image spans 0x120000..0x1776B7 — probe aligned words around the
 	// first hole and near the end of writable memory (0x17237c).

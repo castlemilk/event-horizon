@@ -78,8 +78,8 @@ const (
 // Linux driver convention.
 const (
 	FWBaseName8800D80        = "fmacfw_8800d80.bin"
-	FWBaseName8800D80U02     = "fmacfw_8800d80_u02.bin"
-	FWBaseName8800D80HU02    = "fmacfw_8800d80_h_u02.bin"
+	FWBaseName8800D80U02     = "fmacfw_8800d80_u02_ipc.bin"
+	FWBaseName8800D80HU02    = "fmacfw_8800d80_h_u02_ipc.bin"
 	FWPatchBaseName8800D80   = "fw_patch_8800d80.bin"
 	FWPatchBaseName8800D80U02 = "fw_patch_8800d80_u02.bin"
 	// FWPatchBaseName8800D80U02Ext is the prefix for supplementary patch

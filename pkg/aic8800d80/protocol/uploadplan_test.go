@@ -7,7 +7,7 @@ import "testing"
 // 80-byte register zones at 0x2220 stride, small chunks 16B.
 func TestPlanAdaptiveUpload_RealGeometry(t *testing.T) {
 	addr := uint32(0x120000)
-	blob := make([]byte, 358072)
+	blob := make([]byte, 351828)
 	zones := CloneRegZones()
 	ops := PlanAdaptiveUpload(addr, blob, CloneWallAddr, zones, CloneSmallChunk)
 
@@ -52,15 +52,15 @@ func TestPlanAdaptiveUpload_RealGeometry(t *testing.T) {
 	if preWallSmall != 24 {
 		t.Errorf("pre-skip small ops = %d, want 24 (384 bytes)", preWallSmall)
 	}
-	if total != 356984 {
-		t.Errorf("total bytes = %d, want 356984", total)
+	if total != 351572 {
+		t.Errorf("total bytes = %d, want 351572", total)
 	}
 }
 
 // TestPlanAdaptiveUpload_Boundaries verifies the critical boundary ops.
 func TestPlanAdaptiveUpload_Boundaries(t *testing.T) {
 	addr := uint32(0x120000)
-	blob := make([]byte, 358072)
+	blob := make([]byte, 351828)
 	zones := CloneRegZones()
 	ops := PlanAdaptiveUpload(addr, blob, CloneWallAddr, zones, CloneSmallChunk)
 
@@ -86,8 +86,8 @@ func TestPlanAdaptiveUpload_Boundaries(t *testing.T) {
 	if firstPostSkip == nil || firstPostSkip.Addr != CloneRegBlockEnd {
 		t.Errorf("first post-skip op should start at 0x%08x, got %+v", CloneRegBlockEnd, firstPostSkip)
 	}
-	// Image ends at 0x1776b8.
-	wantLast := uint32(0x1776b8)
+	// Image ends at 0x175e54.
+	wantLast := uint32(0x175e54)
 	if last.Addr+uint32(len(last.Block)) != wantLast {
 		t.Errorf("last op ends at 0x%08x, want 0x%08x", last.Addr+uint32(len(last.Block)), wantLast)
 	}
@@ -98,7 +98,7 @@ func TestPlanAdaptiveUpload_Boundaries(t *testing.T) {
 // This is the run-I hypothesis — the "1KB wall" may be block1's halo.
 func TestPlanAdaptiveUpload_AboveWall1KB(t *testing.T) {
 	addr := uint32(0x120000)
-	blob := make([]byte, 358072)
+	blob := make([]byte, 351828)
 	zones := CloneRegZones()
 	ops := PlanAdaptiveUpload(addr, blob, CloneWallAddr, zones, BlockWriteChunkBytes)
 
@@ -118,16 +118,16 @@ func TestPlanAdaptiveUpload_AboveWall1KB(t *testing.T) {
 		}
 		total += len(op.Block)
 	}
-	if total != 356984 {
-		t.Errorf("total = %d, want 356984", total)
+	if total != 351572 {
+		t.Errorf("total = %d, want 351572", total)
 	}
 	firstAbove := ops[320]
 	if firstAbove.Addr != CloneWallAddr || len(firstAbove.Block) != 384 {
 		t.Errorf("first above-wall op = 0x%08x+%d, want 0x%08x+384", firstAbove.Addr, len(firstAbove.Block), CloneWallAddr)
 	}
 	last := ops[len(ops)-1]
-	if last.Addr+uint32(len(last.Block)) != 0x1776b8 {
-		t.Errorf("last op ends at 0x%08x, want 0x1776b8", last.Addr+uint32(len(last.Block)))
+	if last.Addr+uint32(len(last.Block)) != 0x175e54 {
+		t.Errorf("last op ends at 0x%08x, want 0x175e54", last.Addr+uint32(len(last.Block)))
 	}
 }
 
