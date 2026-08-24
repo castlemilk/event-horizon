@@ -33,6 +33,7 @@ import (
 // is initialised once and reused.
 type Loader struct {
 	fwDir    string
+	fwName   string
 	debug    bool
 	bootType uint32
 
@@ -51,6 +52,11 @@ func WithDebug() LoaderOption {
 // Default: ~/.event-horizon/firmware/aic8800D80
 func WithFirmwareDir(dir string) LoaderOption {
 	return func(l *Loader) { l.fwDir = dir }
+}
+
+// WithFirmwareName overrides the main firmware blob name.
+func WithFirmwareName(name string) LoaderOption {
+	return func(l *Loader) { l.fwName = name }
 }
 
 // WithBootType sets the HOST_START_APP boot type (1=AUTO, 2=CUSTOM, 3=REBOOT, 4=FNCALL, 5=DUMMY).
@@ -539,6 +545,9 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	// AIC_SKIP_WINDOW=1 loads only the 1KB phase (boot-feasibility
 	// experiment — zero wedge risk).
 	fmacName, _ := bundleNameFor(chipID, "fmacfw")
+	if l.fwName != "" {
+		fmacName = l.fwName
+	}
 	fmac, ok := bundle.Get(fmacName)
 	if !ok {
 		return fmt.Errorf("missing %s in firmware bundle", fmacName)
