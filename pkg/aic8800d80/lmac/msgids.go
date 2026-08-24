@@ -54,6 +54,15 @@ const (
 	MMDbgTlvCmdCfm     uint16 = 0x0483
 )
 
+// SCAN task messages (TASK_SCAN = 2). SCAN is the LMAC/SoftMAC scan engine.
+const (
+	SCANStartReq  uint16 = 0x0800
+	SCANStartCfm  uint16 = 0x0801
+	SCANDoneInd   uint16 = 0x0802
+	SCANCancelReq uint16 = 0x0803
+	SCANCancelCfm uint16 = 0x0804
+)
+
 // SCANU task messages (TASK_SCANU = 4). SCANU is the user-space-initiated
 // scan path used by fullmac firmwares.
 const (

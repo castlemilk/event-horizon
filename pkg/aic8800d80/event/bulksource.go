@@ -33,7 +33,7 @@ func (s *bulkFrameSource) Next(ctx context.Context) (protocol.RxFrame, error) {
 		if ctx.Err() != nil {
 			return protocol.RxFrame{}, ctx.Err()
 		}
-		buf := make([]byte, 512)
+		buf := make([]byte, 4096)
 		n, rerr := s.dev.BulkIn(buf, s.timeoutMs)
 		if rerr != nil || n <= 0 {
 			continue // timeout / transient — loop re-checks ctx

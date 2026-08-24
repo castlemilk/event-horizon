@@ -12,6 +12,7 @@ import (
 type Dispatch struct {
 	OnScanResult   func(lmac.ScanResultInd)
 	OnScanStartCfm func(lmac.ScanStartCfm)
+	OnScanDone     func()
 	OnVersion      func(lmac.VersionCfm)
 	OnStartCfm    func()
 	OnAddIfCfm    func(lmac.AddIfCfm)
@@ -32,7 +33,7 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 		}
 		d.OnScanResult(r)
 		return nil
-	case lmac.SCANUStartCfm, lmac.SCANUStartCfmAdditional:
+	case lmac.SCANStartCfm, lmac.SCANUStartCfm, lmac.SCANUStartCfmAdditional:
 		if d.OnScanStartCfm == nil {
 			return nil
 		}
@@ -42,6 +43,11 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 			return nil
 		}
 		d.OnScanStartCfm(c)
+		return nil
+	case lmac.SCANDoneInd:
+		if d.OnScanDone != nil {
+			d.OnScanDone()
+		}
 		return nil
 	case lmac.MMVersionCfm:
 		if d.OnVersion == nil {

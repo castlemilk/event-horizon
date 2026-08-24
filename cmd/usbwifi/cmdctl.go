@@ -93,6 +93,9 @@ func openSession(ctx context.Context) (*session, error) {
 			fmt.Printf("  scan start cfm: vif=%d status=%d result_cnt=%d\n",
 				c.VifIdx, c.Status, c.ResultCnt)
 		},
+		OnScanDone: func() {
+			fmt.Printf("  scan completed\n")
+		},
 		OnVersion: func(c lmac.VersionCfm) {
 			fmt.Printf("  firmware version : %s (lmac=0x%08x)\n", c.VersionString, c.VersionLMAC)
 			fmt.Printf("  machw: 0x%08x / 0x%08x | phy: 0x%08x / 0x%08x\n",
@@ -182,6 +185,7 @@ func runCmdSend(ctx context.Context, args []string) int {
 	ssid := fs.String("ssid", "", "SSID filter for scan_start_req (empty = wildcard)")
 	channels := fs.String("channels", "1,6,11", "Comma-separated 2.4GHz channels for scan_start_req")
 	band := fs.String("band", "2g", "Scan band: 2g or 5g")
+	softmac := fs.Bool("softmac", false, "Use TASK_SCAN (SoftMAC/LMAC) instead of TASK_SCANU (FullMAC)")
 	duration := fs.Duration("scan-duration", 8*time.Second, "How long to collect scan results")
 	timeout := fs.Duration("timeout", 4*time.Second, "Per-command ACK timeout")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -260,9 +264,10 @@ func runCmdSend(ctx context.Context, args []string) int {
 			b = lmac.Band5G
 		}
 		req := &lmac.ScanStartReq{
-			Band:     b,
-			Channels: chans,
-			BSSID:    lmac.BroadcastBSSID,
+			Band:       b,
+			Channels:   chans,
+			BSSID:      lmac.BroadcastBSSID,
+			UseSoftMAC: *softmac,
 		}
 		if *ssid != "" {
 			req.SSIDs = []string{*ssid}
@@ -272,6 +277,11 @@ func runCmdSend(ctx context.Context, args []string) int {
 		if err := s.submitter.Submit(scanCtx, req); err != nil {
 			log.Printf("submit scan_start_req: %v", err)
 			return 1
+		}
+		// Stream scan results during the scan duration
+		select {
+		case <-time.After(*duration):
+		case <-ctx.Done():
 		}
 		return 0
 

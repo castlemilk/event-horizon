@@ -120,9 +120,7 @@ type SkipZone struct {
 func CloneRegZones() []SkipZone {
 	zones := []SkipZone{
 		{Start: 0x170180, End: 0x170280},
-		{Start: 0x172380, End: 0x172480},
-		{Start: 0x174580, End: 0x174680},
-		{Start: 0x176780, End: 0x176880},
+		{Start: 0x172380, End: 0x177800},
 	}
 	return zones
 }

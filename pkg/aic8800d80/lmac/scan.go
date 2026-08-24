@@ -91,6 +91,7 @@ type ScanStartReq struct {
 	BSSID      [6]byte
 	VifIdx     uint8
 	Duration   uint32
+	UseSoftMAC bool
 }
 
 func (r *ScanStartReq) Encode() ([]byte, error) {
@@ -101,7 +102,13 @@ func (r *ScanStartReq) Encode() ([]byte, error) {
 		return nil, fmt.Errorf("scan: too many SSIDs (%d > %d)", len(r.SSIDs), MaxSSIDsInReq)
 	}
 	buf := make([]byte, HeaderSize+ScanReqSize)
-	Header{ID: SCANUStartReq, DestID: uint16(TaskSCANU), SrcID: DRVTaskID, ParamLen: uint16(ScanReqSize)}.Encode(buf)
+	msgID := SCANUStartReq
+	taskID := TaskSCANU
+	if r.UseSoftMAC {
+		msgID = SCANStartReq
+		taskID = TaskSCAN
+	}
+	Header{ID: msgID, DestID: uint16(taskID), SrcID: DRVTaskID, ParamLen: uint16(ScanReqSize)}.Encode(buf)
 	p := buf[HeaderSize:]
 
 	// 1. struct mac_chan_def chan[42] (42 * 6 = 252 bytes)
