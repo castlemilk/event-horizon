@@ -24,19 +24,27 @@ type Dispatch struct {
 func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error {
 	switch msgID {
 	case 0xFFFF:
-		if len(payload) > 60 {
-			raw80211 := payload[60:]
-			rssi := int8(payload[11])
-			if frame, err := wifi.ParseFrame(raw80211, rssi); err == nil {
-				if ap, err := frame.ParseBeacon(); err == nil && d.OnScanResult != nil {
-					var bssid [6]byte
-					copy(bssid[:], frame.Address3[:])
-					d.OnScanResult(lmac.ScanResultInd{
-						SSID:    ap.SSID,
-						BSSID:   bssid,
-						Channel: uint16(ap.Channel),
-						RSSI:    ap.RSSI,
-					})
+		if len(payload) >= 24 {
+			rssi := int8(-50)
+			if len(payload) > 11 {
+				rssi = int8(payload[11])
+			}
+			// Search for 802.11 beacon (0x80 0x00) or probe response (0x50 0x00)
+			for i := 0; i+24 <= len(payload); i++ {
+				if (payload[i] == 0x80 || payload[i] == 0x50) && payload[i+1] == 0x00 {
+					if frame, err := wifi.ParseFrame(payload[i:], rssi); err == nil {
+						if ap, err := frame.ParseBeacon(); err == nil && d.OnScanResult != nil {
+							var bssid [6]byte
+							copy(bssid[:], frame.Address3[:])
+							d.OnScanResult(lmac.ScanResultInd{
+								SSID:    ap.SSID,
+								BSSID:   bssid,
+								Channel: uint16(ap.Channel),
+								RSSI:    ap.RSSI,
+							})
+							break
+						}
+					}
 				}
 			}
 		}

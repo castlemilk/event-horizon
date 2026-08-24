@@ -36,7 +36,7 @@ func (l *Loop) Run(ctx context.Context) error {
 			return nil
 		}
 		if !f.IsConfig() {
-			if l.sink != nil && len(f.Payload) > 60 {
+			if l.sink != nil && len(f.Payload) >= 24 {
 				_ = l.sink.Handle(ctx, 0xFFFF, f.Payload)
 			}
 			continue
