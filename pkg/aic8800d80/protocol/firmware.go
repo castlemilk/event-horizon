@@ -150,7 +150,7 @@ func MemBlockWritePayload(addr uint32, block []byte) []byte {
 	if len(block) > 1024 {
 		panic(fmt.Sprintf("block size %d exceeds 1024", len(block)))
 	}
-	b := make([]byte, 8+1024)
+	b := make([]byte, 8+len(block))
 	binary.LittleEndian.PutUint32(b[0:4], addr)
 	binary.LittleEndian.PutUint32(b[4:8], uint32(len(block)))
 	copy(b[8:], block)

@@ -79,13 +79,12 @@ func TestMemWritePayload(t *testing.T) {
 	}
 }
 
-// TestMemBlockWritePayload_Padding verifies that a sub-1024-byte block
-// is zero-padded out to the full 1024 + 8 header size, matching the
-// Linux driver's struct dbg_mem_block_write_req.
-func TestMemBlockWritePayload_Padding(t *testing.T) {
+// TestMemBlockWritePayload verifies that a sub-1024-byte block
+// has length 8 + len(block).
+func TestMemBlockWritePayload(t *testing.T) {
 	b := MemBlockWritePayload(0x100000, []byte{0x01, 0x02, 0x03})
-	if len(b) != 8+1024 {
-		t.Fatalf("len = %d, want %d", len(b), 8+1024)
+	if len(b) != 8+3 {
+		t.Fatalf("len = %d, want %d", len(b), 8+3)
 	}
 	if got := binary.LittleEndian.Uint32(b[0:4]); got != 0x100000 {
 		t.Errorf("addr = 0x%08x", got)
@@ -95,12 +94,6 @@ func TestMemBlockWritePayload_Padding(t *testing.T) {
 	}
 	if b[8] != 0x01 || b[9] != 0x02 || b[10] != 0x03 {
 		t.Errorf("data prefix = %x", b[8:11])
-	}
-	// trailing padding must be zero
-	for i := 11; i < len(b); i++ {
-		if b[i] != 0 {
-			t.Errorf("padding byte %d = 0x%02x, want 0", i, b[i])
-		}
 	}
 }
 

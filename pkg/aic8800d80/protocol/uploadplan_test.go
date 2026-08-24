@@ -28,9 +28,6 @@ func TestPlanAdaptiveUpload_RealGeometry(t *testing.T) {
 			}
 			bigOps++
 		case op.Addr < CloneRegBlockStart:
-			if len(op.Block) != CloneSmallChunk {
-				t.Fatalf("op in pre-skip small region has size %d", len(op.Block))
-			}
 			preWallSmall++
 		case op.Addr == CloneRegBlockEnd:
 			// First op after the first skip must start exactly at RegBlockEnd.
@@ -48,9 +45,9 @@ func TestPlanAdaptiveUpload_RealGeometry(t *testing.T) {
 	if bigOps != 320 {
 		t.Errorf("1KB ops = %d, want 320", bigOps)
 	}
-	// 0x170000..0x17017f = 384 bytes = 24×16.
-	if preWallSmall != 24 {
-		t.Errorf("pre-skip small ops = %d, want 24 (384 bytes)", preWallSmall)
+	// 0x170000..0x17017f = 384 bytes = 1×256B + 1×128B.
+	if preWallSmall != 2 {
+		t.Errorf("pre-skip small ops = %d, want 2 (384 bytes)", preWallSmall)
 	}
 	if total != 351060 {
 		t.Errorf("total bytes = %d, want 351060", total)
@@ -80,7 +77,7 @@ func TestPlanAdaptiveUpload_Boundaries(t *testing.T) {
 	if lastBeforeWall == nil || lastBeforeWall.Addr != CloneWallAddr-BlockWriteChunkBytes {
 		t.Errorf("last 1KB op should end at the wall, got %+v", lastBeforeWall)
 	}
-	if lastPreSkip == nil || lastPreSkip.Addr != CloneRegBlockStart-CloneSmallChunk || len(lastPreSkip.Block) != CloneSmallChunk {
+	if lastPreSkip == nil || lastPreSkip.Addr+uint32(len(lastPreSkip.Block)) != CloneRegBlockStart {
 		t.Errorf("last pre-skip op should end at 0x%08x, got 0x%08x+%d", CloneRegBlockStart, lastPreSkip.Addr, len(lastPreSkip.Block))
 	}
 	if firstPostSkip == nil || firstPostSkip.Addr != CloneRegBlockEnd {

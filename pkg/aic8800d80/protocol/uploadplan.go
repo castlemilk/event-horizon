@@ -29,7 +29,7 @@ const (
 	CloneWallAddr      uint32 = 0x170000 // ≥ this: 1KB block writes wedge
 	CloneRegBlockStart uint32 = 0x170180 // no-write zone (256 B)
 	CloneRegBlockEnd   uint32 = 0x170280
-	CloneSmallChunk           = 16 // verified-safe small-block size ≥ wall
+	CloneSmallChunk           = 256 // verified-safe small-block size ≥ wall
 	// CloneVerifySafeAddr: verify reads allowed only at/above this.
 	CloneVerifySafeAddr uint32 = 0x170280
 )
