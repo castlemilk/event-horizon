@@ -238,12 +238,8 @@ func runCmdSend(ctx context.Context, args []string) int {
 		return 0
 
 	case "scan_start_req":
-		subCtx, cancel := context.WithTimeout(ctx, *timeout)
+		scanCtx, cancel := context.WithTimeout(ctx, *duration+5*time.Second)
 		defer cancel()
-
-		// 1. Ensure MAC/PHY subsystem is started and a VIF exists.
-		_ = s.submitter.Submit(subCtx, &lmac.StartReq{})
-		_ = s.submitter.Submit(subCtx, &lmac.AddIfReq{Type: 1})
 
 		var chans []lmac.ChannelInfo
 		for _, c := range strings.Split(*channels, ",") {
@@ -271,15 +267,11 @@ func runCmdSend(ctx context.Context, args []string) int {
 		if *ssid != "" {
 			req.SSIDs = []string{*ssid}
 		}
-		fmt.Printf("scanning band=%s channels=%s ...\n", *band, *channels)
-		if err := s.submitter.Submit(subCtx, req); err != nil {
+		fmt.Printf("scanning band=%s channels=%s (duration %v) ...\n", *band, *channels, *duration)
+		fmt.Println("BSSIDs found:")
+		if err := s.submitter.Submit(scanCtx, req); err != nil {
 			log.Printf("submit scan_start_req: %v", err)
 			return 1
-		}
-		fmt.Println("BSSIDs found:")
-		select {
-		case <-ctx.Done():
-		case <-time.After(*duration):
 		}
 		return 0
 
