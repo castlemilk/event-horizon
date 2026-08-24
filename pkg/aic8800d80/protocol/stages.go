@@ -175,10 +175,12 @@ func LoadFirmwareBundle(dir string, chipRev uint8) (*FirmwareBundle, error) {
 		}
 		bundle.files[name] = data
 	}
-	// Also pick up any supplementary ext-patch blobs present on disk
-	// (fw_patch_*_ext<id>.bin); missing ones are warned about later.
-	matches, _ := filepath.Glob(filepath.Join(dir, "*_ext*.bin"))
+	// Also pick up any other .bin blobs present on disk (ext patches, RF fw, etc.)
+	matches, _ := filepath.Glob(filepath.Join(dir, "*.bin"))
 	for _, path := range matches {
+		if _, ok := bundle.files[filepath.Base(path)]; ok {
+			continue
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
