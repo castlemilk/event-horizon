@@ -112,6 +112,12 @@ public struct MainDashboardView: View {
                                 }
                             )
 
+                        case .spectrum:
+                            RFSpectrumAnalyzerView(store: store)
+
+                        case .routing:
+                            MultiInterfaceRoutingView(store: store)
+
                         case .metrics:
                             LiveMetricsAnalyticsView(
                                 stat: store.interfaceStats.first(where: { $0.name == store.selectedInterface }) ?? store.interfaceStats.first,
@@ -129,7 +135,10 @@ public struct MainDashboardView: View {
                             )
 
                         case .diagnostics:
-                            WiFiDiagnosticView(store: store)
+                            VStack(spacing: 16) {
+                                SpeedtestView(store: store)
+                                WiFiDiagnosticView(store: store)
+                            }
 
                         case .updates:
                             FirmwareUpdatesView(
@@ -177,10 +186,14 @@ public struct MainDashboardView: View {
             return "Multi-dongle topology, USB bus controllers & per-device controls"
         case .wifi:
             return "In-range 802.11 Wi-Fi access points & network connections"
+        case .spectrum:
+            return "2.4 GHz & 5 GHz RF channel occupancy, interference & congestion heatmaps"
+        case .routing:
+            return "Multi-WAN interface prioritization & automated zero-stall link failover"
         case .metrics:
             return "Live signal strength, gateway latency RTT & bandwidth analytics"
         case .diagnostics:
-            return "Multi-protocol ICMP, HTTP/TLS trace, DNS benchmark & link scoring"
+            return "Multi-stream line-rate speedtest, ICMP, DNS latency & link scoring"
         case .updates:
             return "DriverKit dext extensions, BootROM & firmware lifecycle"
         case .settings:

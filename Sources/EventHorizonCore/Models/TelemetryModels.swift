@@ -566,3 +566,120 @@ public struct SupervisorStatus: Codable, Sendable, Equatable {
         self.events = events
     }
 }
+
+public struct RFChannelInfo: Identifiable, Codable, Sendable, Equatable {
+    public var id: String { "\(band)-\(channel)" }
+    public let channel: Int
+    public let band: String
+    public let frequencyMhz: Int
+    public let bssidCount: Int
+    public let ssids: [String]
+    public let avgRssi: Int
+    public let congestionLevel: String
+    public let score: Double
+    public let isNonOverlapping: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case channel, band
+        case frequencyMhz = "frequency_mhz"
+        case bssidCount = "bssid_count"
+        case ssids
+        case avgRssi = "avg_rssi"
+        case congestionLevel = "congestion_level"
+        case score
+        case isNonOverlapping = "is_non_overlapping"
+    }
+}
+
+public struct SpectrumReport: Codable, Sendable, Equatable {
+    public let channels24GHz: [RFChannelInfo]
+    public let channels5GHz: [RFChannelInfo]
+    public let optimalChannel24GHz: Int
+    public let optimalChannel5GHz: Int
+    public let totalNetworks: Int
+    public let recommendations: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case channels24GHz = "channels_24ghz"
+        case channels5GHz = "channels_5ghz"
+        case optimalChannel24GHz = "optimal_channel_24ghz"
+        case optimalChannel5GHz = "optimal_channel_5ghz"
+        case totalNetworks = "total_networks"
+        case recommendations
+    }
+}
+
+public struct SpeedTestReport: Codable, Sendable, Equatable {
+    public let phase: String
+    public let progressPercent: Double
+    public let downloadMbps: Double
+    public let uploadMbps: Double
+    public let pingMs: Int64
+    public let jitterMs: Double
+    public let bytesReceived: Int64
+    public let bytesSent: Int64
+    public let interface: String
+    public let server: String
+    public let timestamp: String
+    public let isRunning: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case phase
+        case progressPercent = "progress_percent"
+        case downloadMbps = "download_mbps"
+        case uploadMbps = "upload_mbps"
+        case pingMs = "ping_ms"
+        case jitterMs = "jitter_ms"
+        case bytesReceived = "bytes_received"
+        case bytesSent = "bytes_sent"
+        case interface, server, timestamp
+        case isRunning = "is_running"
+    }
+}
+
+public struct InterfaceRouteInfo: Identifiable, Codable, Sendable, Equatable {
+    public var id: String { name }
+    public let name: String
+    public let ip: String
+    public let gateway: String
+    public let isDefault: Bool
+    public let metric: Int
+    public let isReachable: Bool
+    public let description: String
+
+    enum CodingKeys: String, CodingKey {
+        case name, ip, gateway, metric, description
+        case isDefault = "is_default"
+        case isReachable = "is_reachable"
+    }
+}
+
+public struct FailoverEvent: Identifiable, Codable, Sendable, Equatable {
+    public var id: String { "\(timestamp)-\(fromIface)-\(toIface)" }
+    public let timestamp: String
+    public let fromIface: String
+    public let toIface: String
+    public let reason: String
+
+    enum CodingKeys: String, CodingKey {
+        case timestamp, reason
+        case fromIface = "from_iface"
+        case toIface = "to_iface"
+    }
+}
+
+public struct RoutingPolicyReport: Codable, Sendable, Equatable {
+    public let activeDefaultInterface: String
+    public let autoFailoverEnabled: Bool
+    public let interfaces: [InterfaceRouteInfo]
+    public let recentEvents: [FailoverEvent]
+    public let lastEvaluated: String
+
+    enum CodingKeys: String, CodingKey {
+        case activeDefaultInterface = "active_default_interface"
+        case autoFailoverEnabled = "auto_failover_enabled"
+        case interfaces
+        case recentEvents = "recent_events"
+        case lastEvaluated = "last_evaluated"
+    }
+}

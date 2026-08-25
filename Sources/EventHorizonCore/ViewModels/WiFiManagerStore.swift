@@ -35,6 +35,9 @@ public final class WiFiManagerStore {
     public var installProgress: DriverInstallProgress?
     public var isInstallingDriver = false
     public var supervisorStatus: SupervisorStatus?
+    public var spectrumReport: SpectrumReport?
+    public var speedTestReport: SpeedTestReport?
+    public var routingPolicy: RoutingPolicyReport?
 
     private let client: WiFiDaemonClientProviding
     private let supervisor: RuntimeSupervising
@@ -476,6 +479,65 @@ public final class WiFiManagerStore {
             await refreshData()
         } catch {
             statusMessage = "Restart failed: \(error.localizedDescription)"
+        }
+    }
+
+    public func fetchSpectrumReport() async {
+        if let rep = try? await client.fetchSpectrumReport() {
+            self.spectrumReport = rep
+        }
+    }
+
+    public func startMultiStreamSpeedTest(interface: String? = nil) async {
+        let iface = interface ?? selectedInterface
+        self.isRunningSpeedTest = true
+        self.speedTestError = nil
+        do {
+            let initial = try await client.startMultiStreamSpeedTest(interface: iface)
+            self.speedTestReport = initial
+            
+            // Poll progress until complete
+            for _ in 0..<40 {
+                try await Task.sleep(for: .milliseconds(400))
+                let current = try await client.fetchSpeedTestStatus()
+                self.speedTestReport = current
+                if !current.isRunning && current.phase == "complete" {
+                    break
+                }
+            }
+            self.isRunningSpeedTest = false
+        } catch {
+            self.speedTestError = error.localizedDescription
+            self.isRunningSpeedTest = false
+        }
+    }
+
+    public func fetchRoutingPolicy() async {
+        if let rep = try? await client.fetchRoutingPolicy() {
+            self.routingPolicy = rep
+        }
+    }
+
+    public func setDefaultRoute(interface: String) async {
+        statusMessage = "Setting default route to \(interface)..."
+        do {
+            let rep = try await client.setDefaultInterface(interface: interface)
+            self.routingPolicy = rep
+            self.selectedInterface = interface
+            statusMessage = "Default route changed to \(interface)"
+            await refreshData()
+        } catch {
+            statusMessage = "Failed to change default route: \(error.localizedDescription)"
+        }
+    }
+
+    public func setAutoFailover(enabled: Bool) async {
+        do {
+            let rep = try await client.setAutoFailover(enabled: enabled)
+            self.routingPolicy = rep
+            statusMessage = "Auto-failover set to \(enabled ? "Enabled" : "Disabled")"
+        } catch {
+            statusMessage = "Failover config error: \(error.localizedDescription)"
         }
     }
 

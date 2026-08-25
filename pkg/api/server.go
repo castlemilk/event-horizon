@@ -10,6 +10,7 @@ import (
 	"github.com/castlemilk/event-horizon/pkg/netstat"
 	"github.com/castlemilk/event-horizon/pkg/otel"
 	"github.com/castlemilk/event-horizon/pkg/ping"
+	"github.com/castlemilk/event-horizon/pkg/routing"
 	"github.com/castlemilk/event-horizon/pkg/supervisor"
 	"github.com/castlemilk/event-horizon/pkg/tun"
 	"github.com/castlemilk/event-horizon/pkg/uptime"
@@ -338,6 +339,118 @@ func (s *Server) Start() {
 		json.NewEncoder(w).Encode(Response{
 			Status: "success",
 			Data:   result,
+		})
+	}))
+
+	// GET /api/wifi/spectrum - RF Channel Congestion & Spectrum Heatmap
+	mux.HandleFunc("/api/wifi/spectrum", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		hotspots := s.scanner.ListHotspots()
+		report := wifi.GenerateSpectrumReport(hotspots)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status: "success",
+			Data:   report,
+		})
+	}))
+
+	// POST /api/diagnostics/speedtest/start - Start multi-stream active speedtest
+	mux.HandleFunc("/api/diagnostics/speedtest/start", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		iface := r.URL.Query().Get("interface")
+		if iface == "" {
+			iface = "en0"
+		}
+		err := ping.GetSpeedTester().StartTest(iface)
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(Response{
+				Status:  "error",
+				Message: err.Error(),
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(Response{
+			Status:  "success",
+			Message: fmt.Sprintf("Speedtest started on interface %s", iface),
+			Data:    ping.GetSpeedTester().GetStatus(),
+		})
+	}))
+
+	// GET /api/diagnostics/speedtest/status - Live speedtest progress polling
+	mux.HandleFunc("/api/diagnostics/speedtest/status", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		status := ping.GetSpeedTester().GetStatus()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status: "success",
+			Data:   status,
+		})
+	}))
+
+	// GET /api/routing/policy - Multi-interface routing table & failover state
+	mux.HandleFunc("/api/routing/policy", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		report := routing.GetPolicyManager().GetReport()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status: "success",
+			Data:   report,
+		})
+	}))
+
+	// POST /api/routing/set-default - Switch default routing interface
+	mux.HandleFunc("/api/routing/set-default", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Interface string `json:"interface"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Interface == "" {
+			http.Error(w, "interface is required", http.StatusBadRequest)
+			return
+		}
+
+		err := routing.GetPolicyManager().SetDefaultInterface(req.Interface)
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(Response{
+				Status:  "error",
+				Message: err.Error(),
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(Response{
+			Status:  "success",
+			Message: fmt.Sprintf("Default route switched to %s", req.Interface),
+			Data:    routing.GetPolicyManager().GetReport(),
+		})
+	}))
+
+	// POST /api/routing/failover - Toggle automatic failover watchdog
+	mux.HandleFunc("/api/routing/failover", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		routing.GetPolicyManager().SetAutoFailover(req.Enabled)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status:  "success",
+			Message: fmt.Sprintf("Auto-failover watchdog set to %v", req.Enabled),
+			Data:    routing.GetPolicyManager().GetReport(),
 		})
 	}))
 

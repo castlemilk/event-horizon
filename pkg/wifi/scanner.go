@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -79,7 +78,8 @@ func (s *Scanner) ScanRealNetworks(force ...bool) error {
 	}
 	defer os.Remove(script)
 
-	out, err := exec.Command("swift", script).Output()
+	cmd := execCommandAsConsoleUser("swift", script)
+	out, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("corewlan scan failed: %w", err)
 	}
@@ -148,11 +148,17 @@ func (s *Scanner) ScanRealNetworks(force ...bool) error {
 }
 
 func (s *Scanner) writeScanScript() (string, error) {
-	path := filepath.Join(os.TempDir(), fmt.Sprintf("eh-corewlan-scan-%d.swift", time.Now().UnixNano()))
-	if err := os.WriteFile(path, []byte(coreWLANScanScript), 0o600); err != nil {
-		return "", err
+	candidates := []string{"/tmp", os.TempDir()}
+	var lastErr error
+	for _, dir := range candidates {
+		path := filepath.Join(dir, fmt.Sprintf("eh-corewlan-scan-%d.swift", time.Now().UnixNano()))
+		if err := os.WriteFile(path, []byte(coreWLANScanScript), 0o600); err == nil {
+			return path, nil
+		} else {
+			lastErr = err
+		}
 	}
-	return path, nil
+	return "", lastErr
 }
 
 // ProcessIncomingFrame inspects 802.11 frames and updates the discovered

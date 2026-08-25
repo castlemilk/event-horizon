@@ -135,6 +135,8 @@ func AssociateToNetwork(iface, ssid, passphrase string) error {
 // (swift interpreter). This is the reliable path for networks that
 // `networksetup -setairportnetwork` rejects with keychain error -3925.
 // Exit codes: 0 connected, 4 not found, 5 unconfirmed, else error.
+// It must run as the console user, not as root, because CoreWLAN's
+// CWWiFiClient.shared().interface() returns nil for root.
 func AssociateViaCoreWLAN(ssid, passphrase string) error {
 	script, err := writeTempScript("eh-corewlan-assoc", coreWLANAssociateScript)
 	if err != nil {
@@ -142,7 +144,7 @@ func AssociateViaCoreWLAN(ssid, passphrase string) error {
 	}
 	defer os.Remove(script)
 
-	cmd := exec.Command("swift", script, ssid, passphrase)
+	cmd := execCommandAsConsoleUser("swift", script, ssid, passphrase)
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -178,13 +180,37 @@ exit(0)
 		return err
 	}
 	defer os.Remove(path)
-	return exec.Command("swift", path).Run()
+	return execCommandAsConsoleUser("swift", path).Run()
 }
 
 func writeTempScript(prefix, body string) (string, error) {
-	path := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%d.swift", prefix, time.Now().UnixNano()))
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		return "", err
+	// Use /tmp directly — os.TempDir() may point to a per-user cache volume
+	// that the root daemon cannot write to (e.g. /Volumes/.../tmp).
+	candidates := []string{"/tmp", os.TempDir()}
+	var lastErr error
+	for _, dir := range candidates {
+		path := filepath.Join(dir, fmt.Sprintf("%s-%d.swift", prefix, time.Now().UnixNano()))
+		if err := os.WriteFile(path, []byte(body), 0o600); err == nil {
+			return path, nil
+		} else {
+			lastErr = err
+		}
 	}
-	return path, nil
+	return "", lastErr
+}
+
+func execCommandAsConsoleUser(name string, args ...string) *exec.Cmd {
+	if os.Geteuid() == 0 {
+		user := os.Getenv("SUDO_USER")
+		if user == "" {
+			if out, err := exec.Command("stat", "-f", "%Su", "/dev/console").Output(); err == nil {
+				user = strings.TrimSpace(string(out))
+			}
+		}
+		if user != "" && user != "root" {
+			allArgs := append([]string{"-u", user, name}, args...)
+			return exec.Command("sudo", allArgs...)
+		}
+	}
+	return exec.Command(name, args...)
 }

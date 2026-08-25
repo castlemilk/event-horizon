@@ -16,6 +16,12 @@ public protocol WiFiDaemonClientProviding: Sendable {
     func startDriverInstall(vid: UInt16, pid: UInt16, useDriverKit: Bool) async throws -> DriverInstallProgress
     func fetchInstallProgress() async throws -> DriverInstallProgress
     func fetchSupervisorStatus() async throws -> SupervisorStatus
+    func fetchSpectrumReport() async throws -> SpectrumReport
+    func startMultiStreamSpeedTest(interface: String) async throws -> SpeedTestReport
+    func fetchSpeedTestStatus() async throws -> SpeedTestReport
+    func fetchRoutingPolicy() async throws -> RoutingPolicyReport
+    func setDefaultInterface(interface: String) async throws -> RoutingPolicyReport
+    func setAutoFailover(enabled: Bool) async throws -> RoutingPolicyReport
 }
 
 public actor WiFiDaemonClient: WiFiDaemonClientProviding {
@@ -260,5 +266,100 @@ public actor WiFiDaemonClient: WiFiDaemonClientProviding {
             throw URLError(.cannotParseResponse)
         }
         return status
+    }
+
+    public func fetchSpectrumReport() async throws -> SpectrumReport {
+        let url = baseURL.appendingPathComponent("api/wifi/spectrum")
+        let (data, response) = try await session.data(from: url)
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        let decoded = try JSONDecoder().decode(APIResponse<SpectrumReport>.self, from: data)
+        guard let report = decoded.data else {
+            throw URLError(.cannotParseResponse)
+        }
+        return report
+    }
+
+    public func startMultiStreamSpeedTest(interface: String = "en0") async throws -> SpeedTestReport {
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/diagnostics/speedtest/start"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "interface", value: interface)]
+        let url = components.url ?? baseURL.appendingPathComponent("api/diagnostics/speedtest/start")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        let decoded = try JSONDecoder().decode(APIResponse<SpeedTestReport>.self, from: data)
+        guard let report = decoded.data else {
+            throw URLError(.cannotParseResponse)
+        }
+        return report
+    }
+
+    public func fetchSpeedTestStatus() async throws -> SpeedTestReport {
+        let url = baseURL.appendingPathComponent("api/diagnostics/speedtest/status")
+        let (data, response) = try await session.data(from: url)
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        let decoded = try JSONDecoder().decode(APIResponse<SpeedTestReport>.self, from: data)
+        guard let report = decoded.data else {
+            throw URLError(.cannotParseResponse)
+        }
+        return report
+    }
+
+    public func fetchRoutingPolicy() async throws -> RoutingPolicyReport {
+        let url = baseURL.appendingPathComponent("api/routing/policy")
+        let (data, response) = try await session.data(from: url)
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        let decoded = try JSONDecoder().decode(APIResponse<RoutingPolicyReport>.self, from: data)
+        guard let report = decoded.data else {
+            throw URLError(.cannotParseResponse)
+        }
+        return report
+    }
+
+    public func setDefaultInterface(interface: String) async throws -> RoutingPolicyReport {
+        let url = baseURL.appendingPathComponent("api/routing/set-default")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload = ["interface": interface]
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        let decoded = try JSONDecoder().decode(APIResponse<RoutingPolicyReport>.self, from: data)
+        guard let report = decoded.data else {
+            throw URLError(.cannotParseResponse)
+        }
+        return report
+    }
+
+    public func setAutoFailover(enabled: Bool) async throws -> RoutingPolicyReport {
+        let url = baseURL.appendingPathComponent("api/routing/failover")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let payload = ["enabled": enabled]
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        let decoded = try JSONDecoder().decode(APIResponse<RoutingPolicyReport>.self, from: data)
+        guard let report = decoded.data else {
+            throw URLError(.cannotParseResponse)
+        }
+        return report
     }
 }
