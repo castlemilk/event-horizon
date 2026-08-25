@@ -16,6 +16,7 @@ func TestAPIServerEndpoints(t *testing.T) {
 
 	serverPort := 8999
 	server := NewServer(scanner, serverPort)
+	server.SimulateConnections = true
 	server.Start()
 
 	time.Sleep(200 * time.Millisecond)

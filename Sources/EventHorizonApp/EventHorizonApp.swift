@@ -15,10 +15,38 @@ struct EventHorizonApp: App {
         MenuBarExtra {
             MenuBarPopoverView(store: store)
         } label: {
-            Image(systemName: store.isDaemonConnected ? "wifi" : "wifi.slash")
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(store.isDaemonConnected ? .green : .primary)
+            MenuBarLabelView(store: store)
         }
         .menuBarExtraStyle(.window)
+    }
+}
+
+struct MenuBarLabelView: View {
+    let store: WiFiManagerStore
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if !store.isDaemonConnected {
+                Image(systemName: "wifi.slash")
+                Text("Offline")
+            } else if store.isConnecting {
+                Image(systemName: "wifi")
+                    .symbolEffect(.pulse)
+                Text("Connecting...")
+            } else if !store.activeConnectedNodes.isEmpty {
+                Image(systemName: "wifi")
+                if store.activeConnectedNodes.count > 1 {
+                    Text("\(store.activeConnectedNodes.first!.networkTarget) (+\(store.activeConnectedNodes.count - 1))")
+                } else {
+                    Text(store.activeConnectedNodes.first!.networkTarget)
+                }
+            } else if let ssid = store.primaryConnectedSSID {
+                Image(systemName: "wifi")
+                Text(ssid)
+            } else {
+                Image(systemName: "wifi")
+                Text("Event Horizon")
+            }
+        }
     }
 }

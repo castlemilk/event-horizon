@@ -1,1 +1,11 @@
 external-docs
+.build/
+build/
+bin/
+.tmp_dongle_check/
+sysroot/
+usbwifi
+*.dmg
+*.pkg
+session-*.md
+.DS_Store

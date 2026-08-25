@@ -14,7 +14,10 @@ public struct MainDashboardView: View {
     }
 
     private var primaryNode: HardwareTopologyNode? {
-        store.topologyNodes.first(where: { $0.usbDriver.contains("Wi-Fi") || $0.usbDriver.contains("WLAN") }) ?? store.topologyNodes.first
+        store.topologyNodes.first(where: { $0.bsdInterface == store.selectedInterface })
+            ?? store.topologyNodes.first(where: { $0.status.contains("Default Route") })
+            ?? store.topologyNodes.first(where: { $0.usbDriver.contains("Wi-Fi") || $0.usbDriver.contains("WLAN") })
+            ?? store.topologyNodes.first
     }
 
     private var secondaryNodes: [HardwareTopologyNode] {
@@ -23,22 +26,54 @@ public struct MainDashboardView: View {
 
     public var body: some View {
         HStack(spacing: 0) {
-            // Sidebar Navigation (Matching exact LinkPort sidebar in reference mockup)
+            // Sidebar Navigation
             LinkPortSidebarView(selection: $activeSection)
 
             Divider()
 
             // Main Content Area
             VStack(spacing: 0) {
+                // Unified Content Header
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(activeSection.rawValue)
+                            .font(.title2.weight(.bold))
+                        Text(sectionSubtitle(for: activeSection))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    // Quick Refresh Button
+                    Button(action: {
+                        Task { await store.refreshData() }
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 11, weight: .medium))
+                            Text("Refresh")
+                                .font(.caption.weight(.medium))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
+                .padding(.bottom, 12)
+                .background(Color(nsColor: .windowBackgroundColor))
+
+                Divider()
+
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         switch activeSection {
                         case .overview:
-                            // 1. Overview Screen (Matching Frame 1 of mockup)
                             OverviewDashboardView(
                                 node: primaryNode,
                                 otherNodes: secondaryNodes,
-                                stat: store.interfaceStats.first,
+                                stat: store.interfaceStats.first(where: { $0.name == store.selectedInterface }) ?? store.interfaceStats.first,
                                 activeHotspot: store.activeHotspotForSelectedInterface,
                                 rxHistory: store.rxHistory,
                                 txHistory: store.txHistory,
@@ -53,10 +88,8 @@ public struct MainDashboardView: View {
 
                         case .devices:
                             if isEditingDevice {
-                                // 3. Device Settings Screen (Matching Frame 3 of mockup)
                                 DeviceSettingsView(node: primaryNode, onBack: { isEditingDevice = false })
                             } else {
-                                // 2. Per-Device Management Hierarchy Cards View
                                 HardwareMappingView(
                                     nodes: store.topologyNodes,
                                     hotspots: store.hotspots,
@@ -71,7 +104,6 @@ public struct MainDashboardView: View {
                             }
 
                         case .wifi:
-                            // 2. Wi-Fi Networks & Connect Screen (Matching Frame 2 of mockup)
                             EndpointListView(
                                 hotspots: store.hotspots,
                                 onSelect: { ap in
@@ -81,12 +113,11 @@ public struct MainDashboardView: View {
                             )
 
                         case .metrics:
-                            // 5. Live Connection Metrics Screen
                             LiveMetricsAnalyticsView(
-                                stat: store.interfaceStats.first,
+                                stat: store.interfaceStats.first(where: { $0.name == store.selectedInterface }) ?? store.interfaceStats.first,
                                 pings: store.pingResults,
                                 hotspot: store.activeHotspotForSelectedInterface,
-                                interfaces: store.topologyNodes.map(\.bsdInterface),
+                                interfaces: store.topologyNodes.map(\.bsdInterface).filter { !$0.isEmpty },
                                 selectedInterface: store.selectedInterface,
                                 signalHistory: store.signalHistory,
                                 latencyHistory: store.latencyHistory,
@@ -97,25 +128,27 @@ public struct MainDashboardView: View {
                                 }
                             )
 
+                        case .diagnostics:
+                            WiFiDiagnosticView(store: store)
+
                         case .updates:
-                            // 4. Firmware / Driver Updates Screen (Matching Frame 4 of mockup)
                             FirmwareUpdatesView(
+                                store: store,
                                 node: primaryNode,
                                 otherNodes: secondaryNodes
                             )
 
                         case .settings:
-                            // 3. Settings Screen (Matching Frame 3 of mockup)
                             DeviceSettingsView(node: primaryNode, onBack: { activeSection = .overview })
                         }
                     }
-                    .padding(20)
+                    .padding(24)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .underPageBackgroundColor))
         }
-        .frame(minWidth: 920, minHeight: 620)
+        .frame(minWidth: 920, minHeight: 640)
         .sheet(isPresented: $showConnectSheet) {
             ConnectHotspotSheet(
                 ssid: targetSSID,
@@ -133,6 +166,25 @@ public struct MainDashboardView: View {
         }
         .task {
             await store.bootstrap()
+        }
+    }
+
+    private func sectionSubtitle(for section: NavigationSection) -> String {
+        switch section {
+        case .overview:
+            return "Active network adapter, live throughput & attached hardware"
+        case .devices:
+            return "Multi-dongle topology, USB bus controllers & per-device controls"
+        case .wifi:
+            return "In-range 802.11 Wi-Fi access points & network connections"
+        case .metrics:
+            return "Live signal strength, gateway latency RTT & bandwidth analytics"
+        case .diagnostics:
+            return "Multi-protocol ICMP, HTTP/TLS trace, DNS benchmark & link scoring"
+        case .updates:
+            return "DriverKit dext extensions, BootROM & firmware lifecycle"
+        case .settings:
+            return "Device configuration, ZeroCD modeswitch, and interface rules"
         }
     }
 }

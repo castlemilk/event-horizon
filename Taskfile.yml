@@ -98,3 +98,63 @@ tasks:
       - task: test
       - task: release:dmg
       - task: release:mas
+
+  # ── AIC8800D80 USB Wi-Fi 6 driver stack ────────────────────────────────
+  aic:status:
+    desc: Show AIC8800D80 driver build / install / load status
+    cmds:
+      - ./bin/usbwifi driver status
+
+  aic:build:
+    desc: Build the AIC8800D80 DriverKit driver (.dext bundle)
+    cmds:
+      - ./bin/usbwifi driver build
+
+  aic:install:
+    desc: Build, install, and load the AIC8800D80 DriverKit driver (requires sudo)
+    cmds:
+      - sudo ./bin/usbwifi driver install
+
+  aic:uninstall:
+    desc: Unload and remove the AIC8800D80 DriverKit driver (requires sudo)
+    cmds:
+      - sudo ./bin/usbwifi driver uninstall
+
+  aic:detect:
+    desc: Detect the current AIC8800D80 USB stage (ZeroCD / BootROM / Operational)
+    cmds:
+      - ./bin/usbwifi aicloader --status
+
+  aic:upload-firmware:
+    desc: Upload firmware to the AIC8800D80 dongle (Stage 1 -> Stage 2, requires sudo)
+    cmds:
+      - sudo ./bin/usbwifi aicloader --kill-daemon --firmware-dir=~/.event-horizon/firmware
+
+  aic:fetch-firmware:
+    desc: Fetch the proprietary AIC8800D80 firmware blobs from github.com/radxa-pkg/aic8800
+    cmds:
+      - ./bin/usbwifi firmware fetch --target=aic8800D80 --out=~/.event-horizon/firmware
+
+  aic:verify-firmware:
+    desc: Verify the AIC8800D80 firmware blobs against their SHA-256 hashes
+    cmds:
+      - ./bin/usbwifi firmware verify --target=aic8800D80 --in=~/.event-horizon/firmware
+
+  aic:install-all:
+    desc: "Full install: fetch firmware, upload to dongle, install DriverKit driver (requires sudo)"
+    cmds:
+      - task: aic:fetch-firmware
+      - task: aic:verify-firmware
+      - task: aic:upload-firmware
+      - task: aic:install
+      - task: aic:status
+
+  aic:e2e:
+    desc: "Run full end-to-end install script (firmware + loader + driver + systemextensionsctl, requires sudo). WINDOW=1KB|word|full|skip selects the upload mode (default skip)."
+    cmds:
+      - sudo WINDOW={{.WINDOW}} ./scripts/e2e.sh
+
+  aic:uninstall-all:
+    desc: "Full uninstall: remove DriverKit driver, leave firmware on disk (requires sudo)"
+    cmds:
+      - task: aic:uninstall

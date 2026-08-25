@@ -3,12 +3,18 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"time"
 
+	"github.com/castlemilk/event-horizon/pkg/aic8800d80"
+	"github.com/castlemilk/event-horizon/pkg/aic8800d80/protocol"
+	"github.com/castlemilk/event-horizon/pkg/driver"
 	"github.com/castlemilk/event-horizon/pkg/netstat"
 	"github.com/castlemilk/event-horizon/pkg/ping"
 	"github.com/castlemilk/event-horizon/pkg/uptime"
@@ -188,11 +194,70 @@ func getAvailableTools() []Tool {
 				Properties: map[string]Property{},
 			},
 		},
+		{
+			Name:        "aic8800d80_detect_stage",
+			Description: "Detect the AIC8800D80 USB enumeration stage: Stage 0 (ZeroCD, VID:PID 1111:1111), Stage 1 (BootROM, VID:PID a69c:8d80, awaiting firmware), or Stage 2 (Operational, VID:PID a69c:8d81 / a69c:8d83).",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]Property{},
+			},
+		},
+		{
+			Name:        "aic8800d80_upload_firmware",
+			Description: "Run the user-space firmware loader to drive the AIC8800D80 from BootROM (a69c:8d80) to Operational (a69c:8d81 / a69c:8d83). Requires sudo and stops the running daemon before opening the device.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"firmware_dir": {
+						Type:        "string",
+						Description: "Directory containing the firmware blobs (default: ~/.event-horizon/firmware)",
+					},
+					"kill_daemon": {
+						Type:        "boolean",
+						Description: "Stop the running usbwifi daemon before opening the device (recommended)",
+					},
+				},
+			},
+		},
+		{
+			Name:        "aic8800d80_verify_firmware",
+			Description: "Verify the AIC8800D80 firmware blobs against their SHA-256 hashes from the lockfile.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"firmware_dir": {
+						Type:        "string",
+						Description: "Directory containing the firmware blobs",
+					},
+				},
+			},
+		},
+		{
+			Name:        "usbwifi_list_supported_drivers",
+			Description: "List all supported USB Wi-Fi chipset families (AicSemi, Realtek AC, Realtek AX Wi-Fi 6, MediaTek mt76, Qualcomm ath9k), capabilities, and commercial dongle model lists.",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]Property{},
+			},
+		},
+		{
+			Name:        "aic8800d80_driver_status",
+			Description: "Show whether the AIC8800D80 DriverKit driver is built, installed, and loaded.",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]Property{},
+			},
+		},
 	}
 }
 
 func executeTool(name string, args map[string]interface{}) ToolCallResult {
 	switch name {
+	case "usbwifi_list_supported_drivers":
+		chipsets := driver.GetRegistry().ListAllChipsets()
+		text, _ := json.MarshalIndent(chipsets, "", "  ")
+		return makeResult(string(text))
+
 	case "usbwifi_get_hardware_topology":
 		nodes := usb.GetHardwareTopology()
 		text, _ := json.MarshalIndent(nodes, "", "  ")
@@ -236,7 +301,7 @@ func executeTool(name string, args map[string]interface{}) ToolCallResult {
 
 	case "usbwifi_run_diagnostics":
 		iface, _ := args["interface"].(string)
-		url := daemonURL + "/api/diagnostics/ping"
+		url := daemonURL + "/api/diagnostics/suite"
 		if iface != "" {
 			url += "?interface=" + iface
 		}
@@ -247,8 +312,8 @@ func executeTool(name string, args map[string]interface{}) ToolCallResult {
 			return makeResult(string(body))
 		}
 		tester := ping.NewTester()
-		pings := tester.RunDiagnosticsOnInterface(iface)
-		text, _ := json.MarshalIndent(pings, "", "  ")
+		suite := tester.RunDiagnosticSuite(iface)
+		text, _ := json.MarshalIndent(suite, "", "  ")
 		return makeResult(string(text))
 
 	case "usbwifi_get_uptime":
@@ -256,6 +321,88 @@ func executeTool(name string, args map[string]interface{}) ToolCallResult {
 		stats := tr.GetStats()
 		text, _ := json.MarshalIndent(stats, "", "  ")
 		return makeResult(string(text))
+
+	case "aic8800d80_detect_stage":
+		stage, err := protocol.DetectAICStage(context.Background())
+		if err != nil {
+			return makeError(fmt.Sprintf("detect stage: %v", err))
+		}
+		out := map[string]interface{}{
+			"stage": stage.String(),
+			"stage_int": int(stage),
+		}
+		switch stage {
+		case protocol.StageZeroCD:
+			out["next_step"] = "Run sudo ./bin/usbwifi aicloader --kill-daemon --firmware-dir=<dir> to mode-switch + upload firmware"
+		case protocol.StageBootROM:
+			out["next_step"] = "Run sudo ./bin/usbwifi aicloader --kill-daemon --firmware-dir=<dir> to upload firmware"
+		case protocol.StageOperational:
+			out["next_step"] = "A DriverKit driver is required to expose the device as enX — see docs/aic8800d80-macos-driver-plan.md"
+		}
+		text, _ := json.MarshalIndent(out, "", "  ")
+		return makeResult(string(text))
+
+	case "aic8800d80_upload_firmware":
+		fwDir, _ := args["firmware_dir"].(string)
+		kill, _ := args["kill_daemon"].(bool)
+		if kill {
+			_ = exec.Command("pkill", "-x", "usbwifi").Run()
+			time.Sleep(500 * time.Millisecond)
+		}
+		opts := []aic8800d80.LoaderOption{}
+		if fwDir != "" {
+			opts = append(opts, aic8800d80.WithFirmwareDir(fwDir))
+		}
+		loader := aic8800d80.NewLoader(opts...)
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		res, err := loader.LoadFirmware(ctx)
+		if err != nil {
+			out := map[string]interface{}{
+				"status": "FAILED",
+				"error":  err.Error(),
+			}
+			if res != nil {
+				out["bytes_uploaded"] = res.BytesUploaded
+				out["duration_ms"] = res.Duration.Milliseconds()
+				out["from_stage"] = res.FromStage.String()
+			}
+			text, _ := json.MarshalIndent(out, "", "  ")
+			return makeResult(string(text))
+		}
+		out := map[string]interface{}{
+			"status": "OK",
+			"from_stage": res.FromStage.String(),
+			"to_stage": res.ToStage.String(),
+			"chip_rev": res.ChipRev,
+			"chip_mcu_id": res.ChipMCUID,
+			"boot_addr": fmt.Sprintf("0x%x", res.BootAddr),
+			"bytes_uploaded": res.BytesUploaded,
+			"duration_ms": res.Duration.Milliseconds(),
+		}
+		text, _ := json.MarshalIndent(out, "", "  ")
+		return makeResult(string(text))
+
+	case "aic8800d80_verify_firmware":
+		fwDir, _ := args["firmware_dir"].(string)
+		if fwDir == "" {
+			fwDir = "~/.event-horizon/firmware"
+		}
+		// Reuse the firmware verify CLI logic via a sub-call.
+		cmd := exec.Command("./bin/usbwifi", "firmware", "verify", "--target=aic8800D80", "--in="+fwDir)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return makeError(fmt.Sprintf("verify: %v\n%s", err, out))
+		}
+		return makeResult(string(out))
+
+	case "aic8800d80_driver_status":
+		cmd := exec.Command("./bin/usbwifi", "driver", "status")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return makeError(fmt.Sprintf("driver status: %v\n%s", err, out))
+		}
+		return makeResult(string(out))
 
 	default:
 		return makeError(fmt.Sprintf("Unknown tool: %s", name))

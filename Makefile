@@ -1,6 +1,6 @@
-.PHONY: build package run test clean
+.PHONY: build package run test clean aic-loader aic-firmware aic-test
 
-APP_NAME=Starlink WiFi Manager
+APP_NAME=Event Horizon
 BUILD_DIR=build
 
 build:
@@ -17,6 +17,21 @@ run: package
 
 test:
 	swift test
+
+# ----- AIC8800D80 driver-stack workstreams -----
+
+aic-test:
+	go test ./pkg/aic8800d80/...
+
+aic-loader:
+	@mkdir -p bin
+	go build -o bin/usbwifi ./cmd/usbwifi
+	@echo "Built aicloader inside bin/usbwifi (run: sudo ./bin/usbwifi aicloader --help)"
+
+aic-firmware:
+	@mkdir -p bin
+	go build -o bin/usbwifi ./cmd/usbwifi
+	@echo "Built firmware subcommand inside bin/usbwifi (run: ./bin/usbwifi firmware --help)"
 
 clean:
 	rm -rf bin build .build

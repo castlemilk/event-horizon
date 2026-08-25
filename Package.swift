@@ -8,26 +8,26 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "StarlinkWiFiCore",
-            targets: ["StarlinkWiFiCore"]
+            name: "EventHorizonCore",
+            targets: ["EventHorizonCore"]
         ),
         .executable(
-            name: "StarlinkWiFiApp",
-            targets: ["StarlinkWiFiApp"]
+            name: "EventHorizonApp",
+            targets: ["EventHorizonApp"]
         )
     ],
     dependencies: [],
     targets: [
         .target(
-            name: "StarlinkWiFiCore",
+            name: "EventHorizonCore",
             dependencies: [],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
             ]
         ),
         .executableTarget(
-            name: "StarlinkWiFiApp",
-            dependencies: ["StarlinkWiFiCore"],
+            name: "EventHorizonApp",
+            dependencies: ["EventHorizonCore"],
             resources: [
                 .process("Resources")
             ],
@@ -36,8 +36,8 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "StarlinkWiFiTests",
-            dependencies: ["StarlinkWiFiCore", "StarlinkWiFiApp"],
+            name: "EventHorizonTests",
+            dependencies: ["EventHorizonCore", "EventHorizonApp"],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
             ]

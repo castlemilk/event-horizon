@@ -29,32 +29,38 @@ public struct DeviceManagementCard: View {
     }
 
     private var isWiFiDevice: Bool {
-        node.usbDriver.localizedCaseInsensitiveContains("Wi-Fi") || node.usbDriver.localizedCaseInsensitiveContains("WLAN")
+        node.category == .usbWiFiDongle || node.category == .appleSilicon
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             // Card Top Header: Device Name & Connection Badge
             HStack(spacing: 10) {
-                Image(systemName: deviceIcon(node.usbDriver))
+                Image(systemName: node.category.systemIconName)
                     .font(.title2)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(categoryColor(for: node.category))
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(node.usbDriver)
                             .font(.headline)
 
-                        Text(node.bsdInterface)
-                            .font(.caption2.weight(.bold).monospaced())
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.accentColor.opacity(0.12))
-                            .foregroundStyle(Color.accentColor)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        if !node.bsdInterface.isEmpty {
+                            Text(node.bsdInterface)
+                                .font(.caption2.weight(.bold).monospaced())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.12))
+                                .foregroundStyle(Color.accentColor)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+
+                        Text("[\(node.category.shortLabel)]")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
                     }
 
-                    Text("Assigned Target: \(node.networkTarget) (\(node.ipAddress))")
+                    Text("Target: \(node.networkTarget.isEmpty ? "None" : node.networkTarget) • IP: \(node.ipAddress.isEmpty ? "—" : node.ipAddress)")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
@@ -63,11 +69,11 @@ public struct DeviceManagementCard: View {
 
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(node.status.contains("Connected") || node.status.contains("Active") ? Color.green : Color.orange)
+                        .fill(node.isDefaultRoute ? Color.green : (node.isStorageMode ? Color.orange : Color.secondary))
                         .frame(width: 8, height: 8)
-                    Text(node.status)
+                    Text(node.routeBadge)
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(node.status.contains("Connected") || node.status.contains("Active") ? .green : .orange)
+                        .foregroundStyle(node.isDefaultRoute ? .green : (node.isStorageMode ? .orange : .secondary))
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -80,10 +86,10 @@ public struct DeviceManagementCard: View {
                 if isWiFiDevice {
                     Text("📡 Wi-Fi Hotspots (\(hotspots.count))").tag(0)
                     Text("📊 Metrics & Analytics").tag(1)
-                    Text("📋 Details & Metadata").tag(2)
+                    Text("📋 Details & Hardware").tag(2)
                 } else {
                     Text("📊 Metrics & Analytics").tag(1)
-                    Text("📋 Details & Metadata").tag(2)
+                    Text("📋 Details & Hardware").tag(2)
                 }
             }
             .pickerStyle(.segmented)
@@ -93,7 +99,7 @@ public struct DeviceManagementCard: View {
                 // 1. Nested Wi-Fi Hotspots View for this Device
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("IN-RANGE WI-FI HOTSPOTS FOR THIS CHIP")
+                        Text("SCANNED WI-FI ACCESS POINTS FOR THIS RADIO")
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.secondary)
                         Spacer()
@@ -167,7 +173,7 @@ public struct DeviceManagementCard: View {
                                 } else {
                                     Image(systemName: "stethoscope")
                                 }
-                                Text("Test Connectivity")
+                                Text("Ping Gateway")
                             }
                             .font(.caption.weight(.medium))
                         }
@@ -219,8 +225,8 @@ public struct DeviceManagementCard: View {
 
                     if let s = stat {
                         HStack(spacing: 12) {
-                            SubMetricTile(label: "Download Speed", value: formatSpeed(s.rxRateKBps), icon: "arrow.down.circle.fill", color: .green)
-                            SubMetricTile(label: "Upload Speed", value: formatSpeed(s.txRateKBps), icon: "arrow.up.circle.fill", color: .blue)
+                            SubMetricTile(label: "Download Rate", value: formatSpeed(s.rxRateKBps), icon: "arrow.down.circle.fill", color: .green)
+                            SubMetricTile(label: "Upload Rate", value: formatSpeed(s.txRateKBps), icon: "arrow.up.circle.fill", color: .blue)
                             SubMetricTile(label: "Packets In / Out", value: "\(s.packetsIn) / \(s.packetsOut)", icon: "shippingbox.fill", color: .secondary)
                             SubMetricTile(label: "Data Volume", value: "\(formatBytes(s.bytesIn)) / \(formatBytes(s.bytesOut))", icon: "square.stack.3d.up.fill", color: .purple)
                         }
@@ -234,14 +240,15 @@ public struct DeviceManagementCard: View {
                         .foregroundStyle(.secondary)
 
                     VStack(spacing: 6) {
+                        DetailGridRow(label: "Device Category", value: node.category.rawValue)
                         DetailGridRow(label: "Vendor ID / Product ID", value: "\(node.vendorId) / \(node.productId)")
-                        DetailGridRow(label: "Serial Number", value: node.serialNumber)
-                        DetailGridRow(label: "Physical Bus Speed", value: node.speed)
-                        DetailGridRow(label: "BSD Kernel Interface", value: node.bsdInterface)
-                        DetailGridRow(label: "Assigned IP / Subnet Mask", value: "\(node.ipAddress) (\(node.subnetMask))")
-                        DetailGridRow(label: "Default Gateway IP", value: node.gateway)
-                        DetailGridRow(label: "MAC Address", value: node.macAddress)
-                        DetailGridRow(label: "Driver Architecture", value: node.driverType)
+                        DetailGridRow(label: "Serial Number", value: node.serialNumber.isEmpty ? "—" : node.serialNumber)
+                        DetailGridRow(label: "Physical Bus Speed", value: node.speed.isEmpty ? "—" : node.speed)
+                        DetailGridRow(label: "BSD Kernel Interface", value: node.bsdInterface.isEmpty ? "None (Storage Mode)" : node.bsdInterface)
+                        DetailGridRow(label: "Assigned IP / Subnet Mask", value: "\(node.ipAddress.isEmpty ? "—" : node.ipAddress) (\(node.subnetMask.isEmpty ? "—" : node.subnetMask))")
+                        DetailGridRow(label: "Default Gateway IP", value: node.gateway.isEmpty ? "—" : node.gateway)
+                        DetailGridRow(label: "MAC Address", value: node.macAddress.isEmpty ? "—" : node.macAddress)
+                        DetailGridRow(label: "Driver Architecture", value: node.driverType.isEmpty ? "—" : node.driverType)
                     }
                     .padding(10)
                     .background(Color(nsColor: .controlBackgroundColor))
@@ -260,19 +267,16 @@ public struct DeviceManagementCard: View {
 
     private func runPingTest() {
         isRunningPingTest = true
-        pingResultText = "Pinging \(node.gateway)..."
-        let gateway = node.gateway
+        let target = node.gateway.isEmpty ? "1.1.1.1" : node.gateway
+        pingResultText = "Pinging \(target)..."
+        let iface = node.bsdInterface
         Task {
+            let client = WiFiDaemonClient()
             do {
-                let url = URL(string: "http://127.0.0.1:8990/api/diagnostics/ping?interface=\(node.bsdInterface)&target=\(gateway)")
-                let (data, _) = try await URLSession.shared.data(from: url!)
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let list = json["data"] as? [[String: Any]],
-                   let first = list.first,
-                   let reachable = first["is_reachable"] as? Bool {
-                    let rtt = first["rtt_ms"] as? Int
-                    if reachable, let rtt {
-                        pingResultText = "Gateway Reachable: \(rtt) ms RTT (0% Loss)"
+                let list = try await client.fetchPingDiagnostics(interface: iface, target: target)
+                if let first = list.first {
+                    if first.isReachable {
+                        pingResultText = "Gateway Reachable: \(first.rttMs) ms RTT (0% Loss)"
                     } else {
                         pingResultText = "Gateway unreachable"
                     }
@@ -280,7 +284,7 @@ public struct DeviceManagementCard: View {
                     pingResultText = "No ping data returned"
                 }
             } catch {
-                pingResultText = "Ping failed: \(error.localizedDescription)"
+                pingResultText = "Ping error: \(error.localizedDescription)"
             }
             isRunningPingTest = false
         }
@@ -289,34 +293,32 @@ public struct DeviceManagementCard: View {
     private func runSpeedTest() {
         isRunningSpeedTest = true
         speedTestResultText = "Testing throughput..."
+        let iface = node.bsdInterface
         Task {
+            let client = WiFiDaemonClient()
             do {
-                let url = URL(string: "http://127.0.0.1:8990/api/diagnostics/speedtest?interface=\(node.bsdInterface)")
-                let (data, _) = try await URLSession.shared.data(from: url!)
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let dict = json["data"] as? [String: Any],
-                   let rx = dict["download_mbps"] as? Double,
-                   let tx = dict["upload_mbps"] as? Double {
-                    speedTestResultText = String(format: "Download: %.1f Mbps | Upload: %.1f Mbps", rx, tx)
-                } else {
-                    speedTestResultText = "Speed test returned no results"
-                }
+                let res = try await client.fetchSpeedTest(interface: iface)
+                speedTestResultText = String(format: "Download: %.1f Mbps | Upload: %.1f Mbps", res.downloadMbps, res.uploadMbps)
             } catch {
-                speedTestResultText = "Speed test failed: \(error.localizedDescription)"
+                speedTestResultText = "Speed test error: \(error.localizedDescription)"
             }
             isRunningSpeedTest = false
         }
     }
 
-    private func deviceIcon(_ name: String) -> String {
-        if name.contains("Apple Silicon") || name.contains("Built-in") || name.contains("Broadcom") { return "laptopcomputer" }
-        if name.contains("Wi-Fi") || name.contains("WLAN") { return "wifi" }
-        if name.contains("Ethernet") || name.contains("LAN") { return "cable.connector" }
-        return "cpu"
+    private func categoryColor(for category: DeviceCategory) -> Color {
+        switch category {
+        case .appleSilicon: return .blue
+        case .usbWiFiDongle: return .purple
+        case .ethernet: return .teal
+        case .thunderbolt: return .secondary
+        case .storageMode: return .orange
+        case .generic: return .secondary
+        }
     }
 
     private func formatSpeed(_ kbps: Double) -> String {
-        if kbps > 1024 {
+        if kbps >= 1024 {
             return String(format: "%.2f MB/s", kbps / 1024.0)
         }
         return String(format: "%.1f KB/s", kbps)
@@ -324,7 +326,7 @@ public struct DeviceManagementCard: View {
 
     private func formatBytes(_ bytes: UInt64) -> String {
         let mb = Double(bytes) / (1024.0 * 1024.0)
-        if mb > 1024 {
+        if mb >= 1024 {
             return String(format: "%.2f GB", mb / 1024.0)
         }
         return String(format: "%.1f MB", mb)

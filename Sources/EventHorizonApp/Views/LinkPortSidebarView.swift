@@ -6,6 +6,7 @@ public enum NavigationSection: String, CaseIterable, Identifiable, Sendable {
     case devices = "Devices"
     case wifi = "Wi-Fi"
     case metrics = "Metrics"
+    case diagnostics = "Diagnostics"
     case updates = "Updates"
     case settings = "Settings"
 
@@ -17,6 +18,7 @@ public enum NavigationSection: String, CaseIterable, Identifiable, Sendable {
         case .devices: return "cpu.fill"
         case .wifi: return "wifi"
         case .metrics: return "chart.xyaxis.line"
+        case .diagnostics: return "waveform.path.ecg"
         case .updates: return "arrow.triangle.2.circlepath"
         case .settings: return "gearshape.fill"
         }

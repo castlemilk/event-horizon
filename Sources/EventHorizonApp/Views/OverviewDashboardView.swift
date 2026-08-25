@@ -11,6 +11,8 @@ public struct OverviewDashboardView: View {
     let onSelectDevice: (HardwareTopologyNode) -> Void
     let onDisconnect: () -> Void
 
+    @State private var showVirtualBridges = false
+
     public init(
         node: HardwareTopologyNode?,
         otherNodes: [HardwareTopologyNode],
@@ -54,123 +56,239 @@ public struct OverviewDashboardView: View {
     }
 
     private var rxRateLabel: String {
-        guard let rate = stat?.rxRateKBps, rate > 0 else { return "—" }
+        guard let rate = stat?.rxRateKBps, rate > 0 else { return "0 KB/s" }
+        if rate >= 1024 {
+            return String(format: "%.1f MB/s", rate / 1024.0)
+        }
         return "\(Int(rate)) KB/s"
     }
 
     private var txRateLabel: String {
-        guard let rate = stat?.txRateKBps, rate > 0 else { return "—" }
+        guard let rate = stat?.txRateKBps, rate > 0 else { return "0 KB/s" }
+        if rate >= 1024 {
+            return String(format: "%.1f MB/s", rate / 1024.0)
+        }
         return "\(Int(rate)) KB/s"
+    }
+
+    private var physicalOtherNodes: [HardwareTopologyNode] {
+        otherNodes.filter { $0.category != .thunderbolt && !$0.bsdInterface.hasPrefix("vm") && !$0.bsdInterface.hasPrefix("bridge") }
+    }
+
+    private var virtualBridgeNodes: [HardwareTopologyNode] {
+        otherNodes.filter { $0.category == .thunderbolt || $0.bsdInterface.hasPrefix("vm") || $0.bsdInterface.hasPrefix("bridge") }
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             // Active Hardware Device Hero Card
             if let active = node {
-                HStack(spacing: 24) {
-                    // Render Device-Specific Hero Graphic
-                    DeviceHeroGraphicView(driverName: active.usbDriver)
-                        .frame(width: 140, height: 160)
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 20) {
+                        // Device Hero Icon & Category Graphic
+                        DeviceHeroGraphicView(driverName: active.usbDriver, category: active.category)
+                            .frame(width: 120, height: 130)
 
-                    // Right Device Controls & Telemetry
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 10) {
-                                    Text(active.usbDriver)
-                                        .font(.title2.weight(.bold))
+                        // Device Controls & Telemetry
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 8) {
+                                        Text(active.usbDriver)
+                                            .font(.title3.weight(.bold))
 
-                                    Text("Connected")
-                                        .font(.caption.weight(.semibold))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
-                                        .background(Color.green.opacity(0.18))
-                                        .foregroundStyle(.green)
-                                        .clipShape(Capsule())
+                                        // Category Pill
+                                        Text(active.category.rawValue)
+                                            .font(.caption2.weight(.semibold))
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 2.5)
+                                            .background(categoryBadgeColor(for: active.category).opacity(0.15))
+                                            .foregroundStyle(categoryBadgeColor(for: active.category))
+                                            .clipShape(Capsule())
+
+                                        // Route Pill
+                                        if active.isDefaultRoute {
+                                            Text("Default Route")
+                                                .font(.caption2.weight(.bold))
+                                                .padding(.horizontal, 7)
+                                                .padding(.vertical, 2.5)
+                                                .background(Color.green.opacity(0.18))
+                                                .foregroundStyle(.green)
+                                                .clipShape(Capsule())
+                                        }
+                                    }
+
+                                    HStack(spacing: 8) {
+                                        if !active.bsdInterface.isEmpty {
+                                            Text("Interface \(active.bsdInterface)")
+                                                .font(.caption.monospaced())
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        if !active.macAddress.isEmpty {
+                                            Text("• MAC: \(active.macAddress)")
+                                                .font(.caption.monospaced())
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                        if !active.speed.isEmpty {
+                                            Text("• \(active.speed)")
+                                                .font(.caption)
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                    }
+                                }
+                                Spacer()
+                            }
+
+                            // Metric Row Grid
+                            HStack(spacing: 20) {
+                                MetricSummaryTile(icon: "network", label: "IP Address", value: active.ipAddress.isEmpty ? "—" : active.ipAddress)
+                                MetricSummaryTile(icon: "antenna.radiowaves.left.and.right", label: "Connected SSID", value: networkLabel(active))
+                                MetricSummaryTile(icon: "waveform.path", label: "Channel & Band", value: channelLabel)
+                                MetricSummaryTile(icon: "signal", label: "Signal Strength", value: signalLabel)
+                            }
+
+                            Divider()
+
+                            // Throughput Chart & Monospaced Rates
+                            HStack(alignment: .bottom, spacing: 16) {
+                                LiveThroughputChartView(
+                                    rxData: rxHistory,
+                                    txData: txHistory
+                                )
+
+                                VStack(alignment: .trailing, spacing: 6) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.down")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(.blue)
+                                        Text(rxRateLabel)
+                                            .font(.title3.weight(.bold).monospacedDigit())
+                                    }
+
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.up")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(.teal)
+                                        Text(txRateLabel)
+                                            .font(.body.weight(.bold).monospacedDigit())
+                                    }
+                                }
+                                .frame(width: 110, alignment: .trailing)
+                            }
+
+                            // Card Footer Action Buttons
+                            HStack(spacing: 12) {
+                                if !active.networkTarget.isEmpty || observedHotspot != nil {
+                                    Button("Disconnect", action: onDisconnect)
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(.blue)
+                                } else {
+                                    Button("Scan Available Networks", action: { onSelectDevice(active) })
+                                        .buttonStyle(.borderedProminent)
+                                        .tint(.blue)
                                 }
 
-                                Text("Device interface \(active.bsdInterface) operating normally.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                        }
-
-                        // Metric Row Grid (real observed data)
-                        HStack(spacing: 24) {
-                            MetricSummaryTile(icon: "network", label: "IP address", value: active.ipAddress)
-                            MetricSummaryTile(icon: "antenna.radiowaves.left.and.right", label: "Network", value: networkLabel(active))
-                            MetricSummaryTile(icon: "waveform.path", label: "Channel", value: channelLabel)
-                            MetricSummaryTile(icon: "signal", label: "Signal", value: signalLabel)
-                        }
-
-                        Divider()
-
-                        // Throughput Chart & Monospaced Rates
-                        HStack(alignment: .bottom, spacing: 16) {
-                            LiveThroughputChartView(
-                                rxData: rxHistory,
-                                txData: txHistory
-                            )
-
-                            VStack(alignment: .trailing, spacing: 6) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "arrow.down")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(.blue)
-                                    Text(rxRateLabel)
-                                        .font(.title3.weight(.bold).monospacedDigit())
+                                Button(action: { onSelectDevice(active) }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "slider.horizontal.3")
+                                        Text("Device Details")
+                                    }
                                 }
-
-                                HStack(spacing: 4) {
-                                    Image(systemName: "arrow.up")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(.teal)
-                                    Text(txRateLabel)
-                                        .font(.body.weight(.bold).monospacedDigit())
-                                }
+                                .buttonStyle(.bordered)
                             }
-                            .frame(width: 110, alignment: .trailing)
-                        }
-
-                        // Card Footer Action Buttons
-                        HStack(spacing: 12) {
-                            Button("Disconnect", action: onDisconnect)
-                                .buttonStyle(.borderedProminent)
-                                .tint(.blue)
-
-                            Button(action: {}) {
-                                Image(systemName: "gearshape")
-                                    .font(.body)
-                            }
-                            .buttonStyle(.bordered)
                         }
                     }
                 }
-                .padding(20)
+                .padding(18)
                 .background(Color(nsColor: .windowBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
             }
 
-            // Other Devices Section
+            // Other Physical Devices Section
             VStack(alignment: .leading, spacing: 10) {
-                Text("Other Attached Hardware")
-                    .font(.headline)
+                HStack {
+                    Text("ATTACHED NETWORK ADAPTERS")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Text("\(physicalOtherNodes.count + (node != nil ? 1 : 0)) Active/Physical")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                }
 
                 VStack(spacing: 8) {
-                    ForEach(otherNodes) { device in
+                    ForEach(physicalOtherNodes) { device in
                         Button(action: { onSelectDevice(device) }) {
                             OtherDeviceRow(device: device)
                         }
                         .buttonStyle(.plain)
                     }
+
+                    if physicalOtherNodes.isEmpty {
+                        if node != nil {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle")
+                                    .foregroundStyle(.secondary)
+                                Text("No additional physical USB adapters attached.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        } else {
+                            Text("No network interfaces detected by daemon.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(16)
+                        }
+                    }
                 }
             }
+
+            // Collapsible Inactive / Virtual Bridges Section
+            if !virtualBridgeNodes.isEmpty {
+                DisclosureGroup(
+                    isExpanded: $showVirtualBridges,
+                    content: {
+                        VStack(spacing: 6) {
+                            ForEach(virtualBridgeNodes) { device in
+                                Button(action: { onSelectDevice(device) }) {
+                                    OtherDeviceRow(device: device)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.top, 6)
+                    },
+                    label: {
+                        HStack {
+                            Image(systemName: "bolt.horizontal")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("Virtual & Thunderbolt Bridges (\(virtualBridgeNodes.count))")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                )
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    private func categoryBadgeColor(for category: DeviceCategory) -> Color {
+        switch category {
+        case .appleSilicon: return .blue
+        case .usbWiFiDongle: return .purple
+        case .ethernet: return .teal
+        case .thunderbolt: return .secondary
+        case .storageMode: return .orange
+        case .generic: return .secondary
         }
     }
 }
@@ -184,14 +302,15 @@ struct MetricSummaryTile: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.caption2)
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                 Text(label)
-                    .font(.caption2)
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
             Text(value)
-                .font(.callout.weight(.semibold).monospaced())
+                .font(.system(size: 12, weight: .semibold).monospaced())
+                .lineLimit(1)
         }
     }
 }
@@ -200,61 +319,94 @@ struct OtherDeviceRow: View {
     let device: HardwareTopologyNode
 
     var body: some View {
-        HStack {
-            Image(systemName: deviceIcon(device.usbDriver))
+        HStack(spacing: 12) {
+            Image(systemName: device.category.systemIconName)
                 .font(.title3)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(iconColor(for: device.category))
                 .frame(width: 28)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(device.usbDriver)
-                    .font(.body.weight(.medium))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(device.usbDriver)
+                        .font(.body.weight(.medium))
 
-                HStack(spacing: 4) {
-                    Image(systemName: networkIcon)
-                        .font(.caption2)
-                        .foregroundStyle(.blue)
-                    Text(device.networkTarget.isEmpty ? "No network" : device.networkTarget)
-                        .font(.caption.weight(.medium))
+                    if !device.bsdInterface.isEmpty {
+                        Text(device.bsdInterface)
+                            .font(.caption2.weight(.bold).monospaced())
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.12))
+                            .foregroundStyle(.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+
+                    Text("[\(device.category.shortLabel)]")
+                        .font(.caption2.weight(.medium))
                         .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 6) {
+                    if !device.networkTarget.isEmpty {
+                        HStack(spacing: 3) {
+                            Image(systemName: "wifi")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.blue)
+                            Text(device.networkTarget)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text(device.status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if !device.ipAddress.isEmpty {
+                        Text("• \(device.ipAddress)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
             Spacer()
 
-            Text("Connected")
-                .font(.caption2.weight(.medium))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Color.green.opacity(0.15))
-                .foregroundStyle(.green)
-                .clipShape(Capsule())
-
-            Spacer()
-
-            Text("IP: \(device.ipAddress)")
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            Text(device.speed.isEmpty ? "—" : device.speed)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 4) {
-                Image(systemName: "checkmark.circle.fill")
+            if device.isDefaultRoute {
+                Text("Default Route")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color.green.opacity(0.15))
                     .foregroundStyle(.green)
-                    .font(.caption)
-                Text("Driver up to date")
+                    .clipShape(Capsule())
+            } else if device.isStorageMode {
+                Text("ZeroCD Storage")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.15))
+                    .foregroundStyle(.orange)
+                    .clipShape(Capsule())
+            } else if !device.networkTarget.isEmpty {
+                Text("Connected")
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.12))
+                    .foregroundStyle(.primary)
+                    .clipShape(Capsule())
+            }
+
+            if !device.speed.isEmpty {
+                Text(device.speed)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Image(systemName: "chevron.right")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.leading, 8)
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 4)
         }
         .padding(12)
         .background(Color(nsColor: .controlBackgroundColor))
@@ -265,40 +417,73 @@ struct OtherDeviceRow: View {
         )
     }
 
-    private func deviceIcon(_ name: String) -> String {
-        if name.contains("Apple Silicon") || name.contains("Built-in") || name.contains("Broadcom") { return "laptopcomputer" }
-        if name.contains("Wi-Fi") { return "wifi" }
-        if name.contains("Ethernet") { return "network" }
-        return "point.3.connected.trianglepath.dotted"
-    }
-
-    private var networkIcon: String {
-        device.usbDriver.contains("Ethernet") || device.usbDriver.contains("RTL8156") ? "cable.connector.horizontal" : "wifi"
+    private func iconColor(for category: DeviceCategory) -> Color {
+        switch category {
+        case .appleSilicon: return .blue
+        case .usbWiFiDongle: return .purple
+        case .ethernet: return .teal
+        case .thunderbolt: return .secondary
+        case .storageMode: return .orange
+        case .generic: return .secondary
+        }
     }
 }
 
 struct DeviceHeroGraphicView: View {
     let driverName: String
+    let category: DeviceCategory
 
     var body: some View {
-        if driverName.contains("Wi-Fi") && (driverName.contains("Dongle") || driverName.contains("USB") || driverName.contains("AIC")) {
-            // USB Wi-Fi Dongle Graphic
+        switch category {
+        case .usbWiFiDongle:
             USBDongleVectorView()
-        } else if driverName.contains("Apple Silicon") || driverName.contains("Built-in") || driverName.contains("Broadcom") {
-            // Render Generated Apple M-Series Chip Image Asset
+        case .appleSilicon:
             AppleSiliconChipGraphicView()
-        } else {
-            // Ethernet Adapter Graphic
+        case .ethernet:
             ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(LinearGradient(colors: [Color.blue.opacity(0.85), Color.blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.teal.opacity(0.3), lineWidth: 1)
+                    )
                 VStack(spacing: 8) {
                     Image(systemName: "cable.connector.horizontal")
-                        .font(.system(size: 44))
-                        .foregroundStyle(.white)
-                    Text("Ethernet")
+                        .font(.system(size: 38))
+                        .foregroundStyle(Color.teal)
+                    Text("Ethernet LAN")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.white.opacity(0.9))
+                        .foregroundStyle(.primary)
+                }
+            }
+        case .storageMode:
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    )
+                VStack(spacing: 8) {
+                    Image(systemName: "externaldrive.badge.wifi")
+                        .font(.system(size: 38))
+                        .foregroundStyle(Color.orange)
+                    Text("ZeroCD Storage")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.primary)
+                }
+            }
+        case .thunderbolt, .generic:
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                VStack(spacing: 8) {
+                    Image(systemName: category == .thunderbolt ? "bolt.horizontal.fill" : "cpu")
+                        .font(.system(size: 38))
+                        .foregroundStyle(.secondary)
+                    Text(category == .thunderbolt ? "Thunderbolt" : "Network Adapter")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.primary)
                 }
             }
         }
@@ -308,38 +493,31 @@ struct DeviceHeroGraphicView: View {
 struct AppleSiliconChipGraphicView: View {
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(white: 0.20), Color(white: 0.10)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(nsColor: .controlBackgroundColor))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
                 )
 
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 ZStack {
                     Circle()
-                        .fill(Color.cyan.opacity(0.15))
-                        .frame(width: 60, height: 60)
-                    Image(systemName: "cpu")
-                        .font(.system(size: 32))
-                        .foregroundStyle(Color.cyan)
+                        .fill(Color.blue.opacity(0.12))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "laptopcomputer")
+                        .font(.system(size: 22))
+                        .foregroundStyle(Color.blue)
                 }
 
                 Text("Apple Silicon")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
 
-                Text("Built-in Wi-Fi")
+                Text("Internal Wi-Fi")
                     .font(.system(size: 9))
                     .foregroundStyle(.secondary)
             }
         }
-        .shadow(color: Color.cyan.opacity(0.2), radius: 8, x: 0, y: 4)
     }
 }

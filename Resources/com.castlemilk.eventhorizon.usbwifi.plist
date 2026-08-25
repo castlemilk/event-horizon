@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.castlemilk.eventhorizon.usbwifi</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/Application Support/EventHorizon/usbwifi</string>
+        <string>--port</string>
+        <string>8990</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/usbwifi.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/usbwifi.err</string>
+</dict>
+</plist>

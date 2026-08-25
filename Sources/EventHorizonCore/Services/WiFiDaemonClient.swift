@@ -11,6 +11,11 @@ public protocol WiFiDaemonClientProviding: Sendable {
     func fetchPingDiagnostics(interface: String, target: String) async throws -> [PingResult]
     func fetchUptimeStats() async throws -> StabilityStats
     func fetchSpeedTest(interface: String) async throws -> SpeedTestResult
+    func fetchDiagnosticSuite(interface: String?) async throws -> DiagnosticSuiteReport
+    func fetchSupportedDrivers() async throws -> [ChipsetInfo]
+    func startDriverInstall(vid: UInt16, pid: UInt16, useDriverKit: Bool) async throws -> DriverInstallProgress
+    func fetchInstallProgress() async throws -> DriverInstallProgress
+    func fetchSupervisorStatus() async throws -> SupervisorStatus
 }
 
 public actor WiFiDaemonClient: WiFiDaemonClientProviding {
@@ -162,6 +167,95 @@ public actor WiFiDaemonClient: WiFiDaemonClientProviding {
         }
 
         let decoded = try JSONDecoder().decode(APIResponse<DaemonStatus>.self, from: data)
+        guard let status = decoded.data else {
+            throw URLError(.cannotParseResponse)
+        }
+        return status
+    }
+
+    public func fetchDiagnosticSuite(interface: String? = nil) async throws -> DiagnosticSuiteReport {
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/diagnostics/suite"), resolvingAgainstBaseURL: false)
+        if let iface = interface, !iface.isEmpty {
+            components?.queryItems = [URLQueryItem(name: "interface", value: iface)]
+        }
+        guard let url = components?.url else {
+            throw URLError(.badURL)
+        }
+
+        let (data, response) = try await session.data(from: url)
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoded = try JSONDecoder().decode(APIResponse<DiagnosticSuiteReport>.self, from: data)
+        guard let report = decoded.data else {
+            throw URLError(.cannotParseResponse)
+        }
+        return report
+    }
+
+    public func fetchSupportedDrivers() async throws -> [ChipsetInfo] {
+        let url = baseURL.appendingPathComponent("api/drivers/supported")
+        let (data, response) = try await session.data(from: url)
+
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoded = try JSONDecoder().decode(APIResponse<[ChipsetInfo]>.self, from: data)
+        return decoded.data ?? []
+    }
+
+    public func startDriverInstall(vid: UInt16, pid: UInt16, useDriverKit: Bool) async throws -> DriverInstallProgress {
+        let url = baseURL.appendingPathComponent("api/driver/install")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let payload: [String: Any] = [
+            "vid": vid,
+            "pid": pid,
+            "use_driverkit": useDriverKit,
+            "force_reinstall": true
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoded = try JSONDecoder().decode(APIResponse<DriverInstallProgress>.self, from: data)
+        guard let progress = decoded.data else {
+            throw URLError(.cannotParseResponse)
+        }
+        return progress
+    }
+
+    public func fetchInstallProgress() async throws -> DriverInstallProgress {
+        let url = baseURL.appendingPathComponent("api/driver/install/progress")
+        let (data, response) = try await session.data(from: url)
+
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoded = try JSONDecoder().decode(APIResponse<DriverInstallProgress>.self, from: data)
+        guard let progress = decoded.data else {
+            throw URLError(.cannotParseResponse)
+        }
+        return progress
+    }
+
+    public func fetchSupervisorStatus() async throws -> SupervisorStatus {
+        let url = baseURL.appendingPathComponent("api/supervisor/status")
+        let (data, response) = try await session.data(from: url)
+
+        guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoded = try JSONDecoder().decode(APIResponse<SupervisorStatus>.self, from: data)
         guard let status = decoded.data else {
             throw URLError(.cannotParseResponse)
         }

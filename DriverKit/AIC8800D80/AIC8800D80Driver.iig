@@ -1,0 +1,32 @@
+// AIC8800D80Driver.iig
+//
+// DriverKit driver for the AICSEMI AIC8800D80 USB Wi-Fi 6 adapter.
+// Matches the operational VID:PID (0xa69c:0x8d81 / 0xa69c:0x8d83) and
+// claims the IOUSBHostDevice so the firmware loader can leave it
+// in a known state.
+
+#ifndef AIC8800D80Driver_h
+#define AIC8800D80Driver_h
+
+#include <Availability.h>
+#include <DriverKit/IOService.iig>
+#include <USBDriverKit/IOUSBHostDevice.iig>
+#include <USBDriverKit/IOUSBHostPipe.iig>
+
+class AIC8800D80Driver: public IOService
+{
+public:
+    virtual bool
+    init() override;
+
+    virtual void
+    free() override;
+
+    virtual kern_return_t
+    Start(IOService* provider) override;
+
+    virtual kern_return_t
+    Stop(IOService* provider) override;
+};
+
+#endif /* AIC8800D80Driver_h */

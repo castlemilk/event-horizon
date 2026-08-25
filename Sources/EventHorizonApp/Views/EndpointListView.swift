@@ -14,29 +14,23 @@ public struct EndpointListView: View {
 
     private var filteredHotspots: [AccessPoint] {
         if searchText.isEmpty {
-            return hotspots
+            return hotspots.filter { !$0.ssid.isEmpty && $0.ssid != "<hidden>" }
         }
-        return hotspots.filter { $0.ssid.localizedCaseInsensitiveContains(searchText) }
+        return hotspots.filter {
+            !$0.ssid.isEmpty
+                && $0.ssid != "<hidden>"
+                && $0.ssid.localizedCaseInsensitiveContains(searchText)
+        }
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header Bar
+        VStack(alignment: .leading, spacing: 14) {
+            // Filter & Search Bar
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Available Networks")
-                        .font(.title2.weight(.bold))
-                    Text("In-range 802.11 Wi-Fi access points scanned by network interfaces")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                    TextField("Search networks...", text: $searchText)
+                    TextField("Search Wi-Fi networks...", text: $searchText)
                         .textFieldStyle(.plain)
                 }
                 .padding(.horizontal, 10)
@@ -47,7 +41,12 @@ public struct EndpointListView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
                 )
-                .frame(width: 210)
+
+                Spacer()
+
+                Text("\(filteredHotspots.count) Networks Found")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
             }
 
             // Networks List Container
@@ -65,7 +64,7 @@ public struct EndpointListView: View {
                         Image(systemName: "wifi.slash")
                             .font(.largeTitle)
                             .foregroundStyle(.secondary)
-                        Text("No Wi-Fi networks found.")
+                        Text("No Wi-Fi access points in range.")
                             .font(.body.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
@@ -79,26 +78,6 @@ public struct EndpointListView: View {
                 RoundedRectangle(cornerRadius: 10)
                     .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
             )
-
-            // Bottom Action Bar
-            HStack {
-                Button(action: {}) {
-                    Label("Add Network...", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                Button("Other Options...") {}
-                    .buttonStyle(.bordered)
-                    .foregroundStyle(.secondary)
-
-                Button(action: {}) {
-                    Image(systemName: "questionmark.circle")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
         }
     }
 }
@@ -130,14 +109,14 @@ struct NetworkListRow: View {
                     }
                 }
 
-                Text("\(ap.security) • \(ap.channel > 14 ? "5 GHz" : "2.4 GHz") (Channel \(ap.channel))")
+                Text("\(ap.security.isEmpty ? "Open" : ap.security) • \(ap.channel > 14 ? "5 GHz" : "2.4 GHz") (Channel \(ap.channel)) • \(ap.rssi) dBm")
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            if ap.security != "Open" {
+            if !ap.security.isEmpty && ap.security != "Open" {
                 Image(systemName: "lock.fill")
                     .font(.caption2)
                     .foregroundStyle(.secondary)

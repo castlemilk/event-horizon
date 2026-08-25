@@ -74,6 +74,8 @@ func main() {
 		defer utunDev.Close()
 		utunDev.ConfigureIP("192.168.100.2", "255.255.255.0", "192.168.100.1")
 		utunDev.AddStarlinkRoute()
+		pump := tun.StartPacketPump(utunDev)
+		defer pump.Stop()
 	}
 
 	// 5. Optional Real Association to a target hotspot

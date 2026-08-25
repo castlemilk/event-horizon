@@ -24,14 +24,26 @@ mkdir -p "${FRAMEWORKS_DIR}"
 # Clear any stale SwiftPM lock files if leftover from interrupted builds
 rm -f .build/*.active .build/index.db-wal .build/index.db-shm 2>/dev/null || true
 
-# 1. Compile Go USB Wi-Fi Daemon Binary
-echo "⚙️ [1/5] Compiling Go usbwifi daemon..."
+# 1. Compile Go USB Wi-Fi Daemon and MCP Agent Binaries
+echo "⚙️ [1/5] Compiling Go usbwifi daemon & MCP server..."
 mkdir -p bin
 CGO_ENABLED=1 CGO_CFLAGS="-I/opt/homebrew/include" CGO_LDFLAGS="-L/opt/homebrew/lib -lusb-1.0" \
   go build -buildvcs=false -ldflags="-s -w" -o "${RESOURCES_DIR}/usbwifi" ./cmd/usbwifi
 chmod +x "${RESOURCES_DIR}/usbwifi"
+cp "${RESOURCES_DIR}/usbwifi" "${MACOS_DIR}/usbwifi"
 cp "${RESOURCES_DIR}/usbwifi" bin/usbwifi
 chmod +x bin/usbwifi
+
+CGO_ENABLED=1 CGO_CFLAGS="-I/opt/homebrew/include" CGO_LDFLAGS="-L/opt/homebrew/lib -lusb-1.0" \
+  go build -buildvcs=false -ldflags="-s -w" -o "${RESOURCES_DIR}/usbwifi-mcp" ./cmd/mcp-server 2>/dev/null || true
+if [ -f "${RESOURCES_DIR}/usbwifi-mcp" ]; then
+    chmod +x "${RESOURCES_DIR}/usbwifi-mcp"
+    cp "${RESOURCES_DIR}/usbwifi-mcp" bin/usbwifi-mcp
+fi
+
+if [ -f "Resources/com.castlemilk.eventhorizon.usbwifi.plist" ]; then
+    cp "Resources/com.castlemilk.eventhorizon.usbwifi.plist" "${RESOURCES_DIR}/"
+fi
 
 # Bundle libusb dynamic library inside Contents/Frameworks for Sandbox & Gatekeeper compliance
 if [ -f "/opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib" ]; then
@@ -39,6 +51,7 @@ if [ -f "/opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib" ]; then
     chmod 755 "${FRAMEWORKS_DIR}/libusb-1.0.0.dylib"
     install_name_tool -id "@executable_path/../Frameworks/libusb-1.0.0.dylib" "${FRAMEWORKS_DIR}/libusb-1.0.0.dylib" 2>/dev/null || true
     install_name_tool -change "/opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib" "@executable_path/../Frameworks/libusb-1.0.0.dylib" "${RESOURCES_DIR}/usbwifi" 2>/dev/null || true
+    install_name_tool -change "/opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib" "@executable_path/../Frameworks/libusb-1.0.0.dylib" "${MACOS_DIR}/usbwifi" 2>/dev/null || true
 fi
 
 # 2. Compile Release Swift App (Single invocation)
@@ -49,18 +62,18 @@ SHOW_PATH=".build/arm64-apple-macosx/release"
 if [ ! -d "${SHOW_PATH}" ]; then
     SHOW_PATH=".build/release"
 fi
-RELEASE_BIN="${SHOW_PATH}/StarlinkWiFiApp"
+RELEASE_BIN="${SHOW_PATH}/EventHorizonApp"
 
-cp "${RELEASE_BIN}" "${MACOS_DIR}/StarlinkWiFiApp"
-chmod +x "${MACOS_DIR}/StarlinkWiFiApp"
+cp "${RELEASE_BIN}" "${MACOS_DIR}/EventHorizonApp"
+chmod +x "${MACOS_DIR}/EventHorizonApp"
 
-# Copy SwiftPM resource bundles (e.g. UniversalWiFiManager_StarlinkWiFiApp.bundle) into Contents/Resources/
+# Copy SwiftPM resource bundles (e.g. UniversalWiFiManager_EventHorizonApp.bundle) into Contents/Resources/
 for b in "${SHOW_PATH}"/*.bundle; do
     if [ -d "$b" ]; then
         cp -R "$b" "${RESOURCES_DIR}/"
     fi
 done
-cp Sources/StarlinkWiFiApp/Resources/blackhole_logo.jpg "${RESOURCES_DIR}/blackhole_logo.jpg" 2>/dev/null || true
+cp Sources/EventHorizonApp/Resources/blackhole_logo.jpg "${RESOURCES_DIR}/blackhole_logo.jpg" 2>/dev/null || true
 
 # 3. Copy Plist and Entitlements
 echo "⚙️ [3/5] Assembling Bundle Structure & Info.plist..."

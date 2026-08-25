@@ -31,8 +31,27 @@ func (t *Tester) PingTargetOnInterface(ifaceName, target string, port int) PingR
 		ifaceName = "en0"
 	}
 
-	// 1. Try system ICMP ping with interface binding (-b on macOS)
-	out, err := exec.Command("ping", "-c", "2", "-W", "1000", "-b", ifaceName, target).Output()
+	var localIP string
+	if iface, err := net.InterfaceByName(ifaceName); err == nil {
+		if addrs, err := iface.Addrs(); err == nil {
+			for _, a := range addrs {
+				if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
+					localIP = ipnet.IP.String()
+					break
+				}
+			}
+		}
+	}
+
+	// 1. Try real system ICMP ping bound to the local IP of the target interface (-S on macOS)
+	var cmd *exec.Cmd
+	if localIP != "" {
+		cmd = exec.Command("ping", "-c", "2", "-W", "1000", "-S", localIP, target)
+	} else {
+		cmd = exec.Command("ping", "-c", "2", "-W", "1000", target)
+	}
+
+	out, err := cmd.Output()
 	if err == nil {
 		str := string(out)
 		if strings.Contains(str, "bytes from") {
@@ -56,23 +75,15 @@ func (t *Tester) PingTargetOnInterface(ifaceName, target string, port int) PingR
 	dialer := &net.Dialer{
 		Timeout: 2 * time.Second,
 	}
-
-	if iface, err := net.InterfaceByName(ifaceName); err == nil {
-		if addrs, err := iface.Addrs(); err == nil {
-			for _, a := range addrs {
-				if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
-					dialer.LocalAddr = &net.TCPAddr{IP: ipnet.IP}
-					break
-				}
-			}
-		}
+	if localIP != "" {
+		dialer.LocalAddr = &net.TCPAddr{IP: net.ParseIP(localIP)}
 	}
 
 	conn, err := dialer.Dial("tcp", addr)
 	elapsed := time.Since(start).Milliseconds()
 
 	if err != nil {
-		log.Printf("[PING] Ping on interface %s to %s failed: %v", ifaceName, target, err)
+		log.Printf("[PING] Ping on interface %s (src %s) to %s failed: %v", ifaceName, localIP, target, err)
 		return PingResult{
 			Interface:         ifaceName,
 			Target:            target,

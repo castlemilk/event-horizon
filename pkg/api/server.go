@@ -6,9 +6,12 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/castlemilk/event-horizon/pkg/driver"
 	"github.com/castlemilk/event-horizon/pkg/netstat"
 	"github.com/castlemilk/event-horizon/pkg/otel"
 	"github.com/castlemilk/event-horizon/pkg/ping"
+	"github.com/castlemilk/event-horizon/pkg/supervisor"
+	"github.com/castlemilk/event-horizon/pkg/tun"
 	"github.com/castlemilk/event-horizon/pkg/uptime"
 	"github.com/castlemilk/event-horizon/pkg/usb"
 	"github.com/castlemilk/event-horizon/pkg/wifi"
@@ -21,9 +24,23 @@ type Server struct {
 	tracker  *uptime.Tracker
 	exporter *otel.OTelExporter
 	port     int
+
+	// SimulateConnections forces the simulated 802.11 handshake path even
+	// when a real Wi-Fi interface is present (used by tests / demo mode).
+	SimulateConnections bool
 }
 
 func NewServer(scanner *wifi.Scanner, port int) *Server {
+	wd := supervisor.GetWatchdog()
+	wd.SetDeviceChecker(func() (bool, string, uint16, uint16) {
+		dongles := usb.ListWiFiDongles()
+		if len(dongles) > 0 {
+			return true, dongles[0].Name, dongles[0].VendorID, dongles[0].ProductID
+		}
+		return false, "", 0, 0
+	})
+	wd.Start()
+
 	return &Server{
 		scanner:  scanner,
 		monitor:  netstat.NewMonitor(),
@@ -62,8 +79,11 @@ func (s *Server) Start() {
 		}
 	}
 
-	// GET /api/wifi/scan - List all discovered Wi-Fi hotspots
+	// GET /api/wifi/scan - List all discovered Wi-Fi hotspots (real radio scan)
 	mux.HandleFunc("/api/wifi/scan", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		if err := s.scanner.ScanRealNetworks(); err != nil {
+			log.Printf("[API] Real scan failed: %v", err)
+		}
 		hotspots := s.scanner.ListHotspots()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(Response{
@@ -96,18 +116,38 @@ func (s *Server) Start() {
 			return
 		}
 
+		// Connect exclusively via the USB Wi-Fi Dongle (libusb/utun stack)
+		// Built-in Wi-Fi (en0) remains on the host's default network.
 		conn := wifi.NewWPAConnection(req.SSID, req.Passphrase, ap.BSSID)
-		go func() {
-			if err := conn.Connect(); err != nil {
-				log.Printf("[API] Connection error: %v", err)
-			}
-		}()
+		if err := conn.Connect(); err != nil {
+			log.Printf("[API] Dongle connection error: %v", err)
+			http.Error(w, "Dongle connection failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		s.scanner.SetConnected(req.SSID)
+		usb.SetDongleConnected(req.SSID)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(Response{
 			Status:  "success",
-			Message: fmt.Sprintf("Initiating connection to '%s'", req.SSID),
+			Message: fmt.Sprintf("USB Wi-Fi Dongle connected to '%s' (WPA2 Active)", req.SSID),
 			Data:    ap,
+		})
+	}))
+
+	// POST /api/wifi/disconnect - Disconnect the USB Wi-Fi dongle
+	mux.HandleFunc("/api/wifi/disconnect", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.scanner.SetConnected("")
+		usb.SetDongleConnected("")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status:  "success",
+			Message: "USB Wi-Fi Dongle disconnected",
 		})
 	}))
 
@@ -121,6 +161,56 @@ func (s *Server) Start() {
 		})
 	}))
 
+	// GET /api/tun/pump/stats — per-protocol packet counters from the
+	// utun pump, plus a derived "real_frames_seen" boolean for integration
+	// tests (TCP/UDP/other arriving through the bridge, not just ICMP).
+	mux.HandleFunc("/api/tun/pump/stats", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		pump := tun.GlobalPump()
+		if pump == nil {
+			http.Error(w, "packet pump not running", http.StatusServiceUnavailable)
+			return
+		}
+		st := pump.GetStats()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status: "success",
+			Data: map[string]any{
+				"packets_in":      st.PacketsIn,
+				"packets_out":     st.PacketsOut,
+				"bytes_in":        st.BytesIn,
+				"bytes_out":       st.BytesOut,
+				"ipv4":            st.IPv4,
+				"ipv6":            st.IPv6,
+				"icmp":            st.ICMP,
+				"tcp":             st.TCP,
+				"udp":             st.UDP,
+				"other_l4":        st.OtherL4,
+				"tcp_syns_to_dish": st.TCPSYNToDish,
+				"real_frames_seen": st.TCP+st.UDP+st.OtherL4 > 0,
+			},
+		})
+	}))
+
+	// POST /api/tun/pump/reset — zeroes the packet pump counters (test-only).
+	mux.HandleFunc("/api/tun/pump/reset", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		pump := tun.GlobalPump()
+		if pump == nil {
+			http.Error(w, "packet pump not running", http.StatusServiceUnavailable)
+			return
+		}
+		pump.ResetStats()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{Status: "success"})
+	}))
+
 	// GET /api/hardware/topology - 3-tier mapping: USB Driver -> BSD Interface -> Network Connection
 	mux.HandleFunc("/api/hardware/topology", corsHandler(func(w http.ResponseWriter, r *http.Request) {
 		topology := usb.GetHardwareTopology()
@@ -131,21 +221,63 @@ func (s *Server) Start() {
 		})
 	}))
 
-	// GET /api/diagnostics/ping?interface=en0 - Live TCP/ICMP ping diagnostic test bound to given interface
+	// POST /api/usb/modeswitch - Mode-switch a ZeroCD storage-mode Wi-Fi dongle
+	// (SCSI eject) so it re-enumerates in WLAN mode and gains a BSD interface.
+	mux.HandleFunc("/api/usb/modeswitch", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		info, err := usb.SwitchStorageDongleMode()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status:  "success",
+			Message: fmt.Sprintf("Mode-switched dongle 0x%04x:0x%04x into WLAN mode", info.VendorID, info.ProductID),
+		})
+	}))
+
+	// GET /api/diagnostics/ping - Interface-bound reachability & latency verification
 	mux.HandleFunc("/api/diagnostics/ping", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		iface := r.URL.Query().Get("interface")
+		target := r.URL.Query().Get("target")
+
+		if target != "" {
+			result := s.tester.PingTargetOnInterface(iface, target, 53)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(Response{
+				Status: "success",
+				Data:   []ping.PingResult{result},
+			})
+			return
+		}
+
+		pings := s.tester.RunDiagnosticsOnInterface(iface)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status: "success",
+			Data:   pings,
+		})
+	}))
+
+	// GET /api/diagnostics/suite - Comprehensive multi-protocol diagnostics (ICMP, HTTP, DNS, Jitter, Quality Score)
+	mux.HandleFunc("/api/diagnostics/suite", corsHandler(func(w http.ResponseWriter, r *http.Request) {
 		iface := r.URL.Query().Get("interface")
 		if iface == "" {
 			iface = "en0"
 		}
-		results := s.tester.RunDiagnosticsOnInterface(iface)
+		suite := s.tester.RunDiagnosticSuite(iface)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(Response{
 			Status: "success",
-			Data:   results,
+			Data:   suite,
 		})
 	}))
 
-	// GET /api/diagnostics/speedtest?interface=en0 - Live HTTP download/upload speed test bound to interface
+	// GET /api/diagnostics/speedtest - Live throughput bandwidth testing
 	mux.HandleFunc("/api/diagnostics/speedtest", corsHandler(func(w http.ResponseWriter, r *http.Request) {
 		iface := r.URL.Query().Get("interface")
 		if iface == "" {
@@ -188,6 +320,71 @@ func (s *Server) Start() {
 				"interfaces": stats,
 				"stability":  stability,
 			},
+		})
+	}))
+
+	// GET /api/drivers/supported - Universal Wi-Fi chipset support matrix & capabilities
+	mux.HandleFunc("/api/drivers/supported", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		chipsets := driver.GetRegistry().ListAllChipsets()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status: "success",
+			Data:   chipsets,
+		})
+	}))
+
+	// POST /api/driver/install - Execute driver installation & flashing pipeline
+	mux.HandleFunc("/api/driver/install", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req driver.InstallRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			// default to AIC8800 if empty
+			req.VID = 0xa69c
+			req.PID = 0x8d81
+		}
+		if req.VID == 0 {
+			req.VID = 0xa69c
+			req.PID = 0x8d81
+		}
+
+		err := driver.GetInstaller().RunInstall(req)
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(Response{
+				Status:  "error",
+				Message: err.Error(),
+			})
+			return
+		}
+
+		json.NewEncoder(w).Encode(Response{
+			Status:  "success",
+			Message: "Driver installation sequence started",
+			Data:    driver.GetInstaller().GetProgress(),
+		})
+	}))
+
+	// GET /api/driver/install/progress - Poll current installation progress & logs
+	mux.HandleFunc("/api/driver/install/progress", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		prog := driver.GetInstaller().GetProgress()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status: "success",
+			Data:   prog,
+		})
+	}))
+
+	// GET /api/supervisor/status - Runtime supervisor health & event audit log
+	mux.HandleFunc("/api/supervisor/status", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+		status := supervisor.GetWatchdog().GetStatus()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{
+			Status: "success",
+			Data:   status,
 		})
 	}))
 

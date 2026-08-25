@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>StarlinkWiFiApp</string>
+    <string>EventHorizonApp</string>
     <key>CFBundleIdentifier</key>
     <string>com.castlemilk.eventhorizon</string>
     <key>CFBundleInfoDictionaryVersion</key>

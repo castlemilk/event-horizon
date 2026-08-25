@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.eventhorizon.driver.AIC8800D80</string>
+    <key>CFBundleVersion</key>
+    <string>0.0.1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.0.1</string>
+    <key>CFBundlePackageType</key>
+    <string>DEXT</string>
+    <key>CFBundleName</key>
+    <string>AIC8800D80Driver</string>
+    <key>CFBundleExecutable</key>
+    <string>AIC8800D80Driver</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 Event Horizon. All rights reserved.</string>
+    <key>IOKitPersonalities</key>
+    <dict>
+        <key>AIC8800D80-Operational-WiFi+BT</key>
+        <dict>
+            <key>CFBundleIdentifier</key>
+            <string>com.eventhorizon.driver.AIC8800D80</string>
+            <key>IOClass</key>
+            <string>com_eventhorizon_driver_AIC8800D80</string>
+            <key>IOProviderClass</key>
+            <string>IOUSBHostDevice</string>
+            <key>idVendor</key>
+            <integer>42652</integer>
+            <key>idProduct</key>
+            <integer>36225</integer>
+            <key>bConfigurationValue</key>
+            <integer>1</integer>
+            <key>bInterfaceNumber</key>
+            <integer>0</integer>
+        </dict>
+        <key>AIC8800D80-Operational-WiFi</key>
+        <dict>
+            <key>CFBundleIdentifier</key>
+            <string>com.eventhorizon.driver.AIC8800D80</string>
+            <key>IOClass</key>
+            <string>com_eventhorizon_driver_AIC8800D80</string>
+            <key>IOProviderClass</key>
+            <string>IOUSBHostDevice</string>
+            <key>idVendor</key>
+            <integer>42652</integer>
+            <key>idProduct</key>
+            <integer>36235</integer>
+            <key>bConfigurationValue</key>
+            <integer>1</integer>
+            <key>bInterfaceNumber</key>
+            <integer>0</integer>
+        </dict>
+    </dict>
+</dict>
+</plist>

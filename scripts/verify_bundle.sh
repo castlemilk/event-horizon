@@ -21,7 +21,7 @@ fi
 echo "  ✅ App Bundle exists: ${APP_BUNDLE}"
 
 # 2. Verify Main Binary Executable
-MAIN_BIN="${MACOS_DIR}/StarlinkWiFiApp"
+MAIN_BIN="${MACOS_DIR}/EventHorizonApp"
 if [ ! -x "${MAIN_BIN}" ]; then
     echo "❌ ERROR: Main executable missing or not executable at ${MAIN_BIN}"
     exit 1

@@ -28,7 +28,7 @@ public struct HardwareMappingView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             if let selected = selectedDeviceForDetail {
                 // Per-Device Dedicated Detail View
                 let stat = interfaceStats.first(where: { selected.bsdInterface.contains($0.name) })
@@ -42,18 +42,7 @@ public struct HardwareMappingView: View {
                 )
             } else {
                 // Collapsible Device List View
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Connected Devices & Hardware")
-                            .font(.title2.weight(.bold))
-                        Text("Click any hardware device to inspect full telemetry, run diagnostics, or collapse/expand summary")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                }
-
-                VStack(spacing: 12) {
+                VStack(spacing: 10) {
                     ForEach(nodes) { node in
                         let isExpanded = expandedDeviceIDs.contains(node.id)
                         let stat = interfaceStats.first(where: { node.bsdInterface.contains($0.name) })
@@ -74,35 +63,52 @@ public struct HardwareMappingView: View {
                                             .foregroundStyle(.secondary)
                                             .frame(width: 14)
 
-                                        DeviceIconSymbol(name: node.usbDriver)
+                                        Image(systemName: node.category.systemIconName)
                                             .font(.title3)
-                                            .foregroundStyle(Color.accentColor)
+                                            .foregroundStyle(categoryColor(for: node.category))
+                                            .frame(width: 24)
 
                                         VStack(alignment: .leading, spacing: 2) {
                                             HStack(spacing: 6) {
                                                 Text(node.usbDriver)
                                                     .font(.body.weight(.semibold))
 
-                                                Text(node.bsdInterface)
-                                                    .font(.caption2.weight(.bold).monospaced())
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 2)
-                                                    .background(Color.blue.opacity(0.12))
-                                                    .foregroundStyle(.blue)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                                            }
+                                                if !node.bsdInterface.isEmpty {
+                                                    Text(node.bsdInterface)
+                                                        .font(.caption2.weight(.bold).monospaced())
+                                                        .padding(.horizontal, 5)
+                                                        .padding(.vertical, 1)
+                                                        .background(Color.secondary.opacity(0.12))
+                                                        .foregroundStyle(.primary)
+                                                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                                                }
 
-                                            Text("IP: \(node.ipAddress) • \(node.speed)")
-                                                .font(.caption2.monospaced())
-                                                .foregroundStyle(.secondary)
-
-                                            HStack(spacing: 4) {
-                                                Image(systemName: node.usbDriver.contains("Ethernet") || node.usbDriver.contains("RTL8156") ? "cable.connector.horizontal" : "wifi")
-                                                    .font(.caption2)
-                                                    .foregroundStyle(.blue)
-                                                Text(node.networkTarget.isEmpty ? "No network" : node.networkTarget)
+                                                Text("[\(node.category.shortLabel)]")
                                                     .font(.caption2.weight(.medium))
                                                     .foregroundStyle(.secondary)
+                                            }
+
+                                            HStack(spacing: 6) {
+                                                if !node.ipAddress.isEmpty {
+                                                    Text("IP: \(node.ipAddress)")
+                                                        .font(.caption2.monospaced())
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                                if !node.speed.isEmpty {
+                                                    Text("• \(node.speed)")
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.tertiary)
+                                                }
+                                                if !node.networkTarget.isEmpty {
+                                                    HStack(spacing: 3) {
+                                                        Image(systemName: "wifi")
+                                                            .font(.system(size: 8))
+                                                            .foregroundStyle(.blue)
+                                                        Text(node.networkTarget)
+                                                            .font(.caption2.weight(.medium))
+                                                            .foregroundStyle(.secondary)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -113,11 +119,11 @@ public struct HardwareMappingView: View {
 
                                 HStack(spacing: 4) {
                                     Circle()
-                                        .fill(node.status.contains("Connected") || node.status.contains("Active") ? Color.green : Color.orange)
+                                        .fill(node.isDefaultRoute ? Color.green : (node.isStorageMode ? Color.orange : Color.secondary))
                                         .frame(width: 6, height: 6)
-                                    Text(node.status)
+                                    Text(node.routeBadge)
                                         .font(.caption2.weight(.bold))
-                                        .foregroundStyle(node.status.contains("Connected") || node.status.contains("Active") ? .green : .orange)
+                                        .foregroundStyle(node.isDefaultRoute ? .green : (node.isStorageMode ? .orange : .secondary))
                                 }
 
                                 Button(action: {
@@ -130,8 +136,9 @@ public struct HardwareMappingView: View {
                                     .font(.caption.weight(.medium))
                                 }
                                 .buttonStyle(.bordered)
+                                .controlSize(.small)
                             }
-                            .padding(14)
+                            .padding(12)
 
                             // Expanded Detailed Sub-Panel
                             if isExpanded {
@@ -157,20 +164,15 @@ public struct HardwareMappingView: View {
             }
         }
     }
-}
 
-struct DeviceIconSymbol: View {
-    let name: String
-
-    var body: some View {
-        if name.contains("Apple Silicon") || name.contains("Built-in") || name.contains("Broadcom") {
-            Image(systemName: "laptopcomputer")
-        } else if name.contains("Wi-Fi") || name.contains("WLAN") {
-            Image(systemName: "wifi")
-        } else if name.contains("Ethernet") || name.contains("RTL8156") {
-            Image(systemName: "cable.connector.horizontal")
-        } else {
-            Image(systemName: "cpu")
+    private func categoryColor(for category: DeviceCategory) -> Color {
+        switch category {
+        case .appleSilicon: return .blue
+        case .usbWiFiDongle: return .purple
+        case .ethernet: return .teal
+        case .thunderbolt: return .secondary
+        case .storageMode: return .orange
+        case .generic: return .secondary
         }
     }
 }

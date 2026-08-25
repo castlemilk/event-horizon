@@ -18,6 +18,7 @@ func TestFullE2EServerSuite(t *testing.T) {
 
 	serverPort := 8998
 	server := NewServer(scanner, serverPort)
+	server.SimulateConnections = true
 	server.Start()
 
 	// Wait briefly for HTTP server listener setup
