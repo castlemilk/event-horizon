@@ -74,6 +74,9 @@ for b in "${SHOW_PATH}"/*.bundle; do
     fi
 done
 cp Sources/EventHorizonApp/Resources/blackhole_logo.jpg "${RESOURCES_DIR}/blackhole_logo.jpg" 2>/dev/null || true
+if [ -f "Resources/AppIcon.icns" ]; then
+    cp "Resources/AppIcon.icns" "${RESOURCES_DIR}/AppIcon.icns"
+fi
 
 # 3. Copy Plist and Entitlements
 echo "⚙️ [3/5] Assembling Bundle Structure & Info.plist..."
@@ -83,9 +86,21 @@ chmod 644 "${CONTENTS_DIR}/Info.plist"
 # 4. Sign App Bundle with Entitlements & Clear Quarantine
 echo "⚙️ [4/5] Code signing App Bundle..."
 xattr -cr "${APP_BUNDLE}" 2>/dev/null || true
-if command -v codesign &> /dev/null; then
+
+APP_CERT="3rd Party Mac Developer Application: Ben Ebsworth (WFTX6CN23F)"
+INSTALLER_CERT="3rd Party Mac Developer Installer: Ben Ebsworth (WFTX6CN23F)"
+
+if security find-identity -v | grep -q "${APP_CERT}"; then
+    echo "  ✍️ Signing executables with '${APP_CERT}'..."
+    codesign --force --sign "${APP_CERT}" --entitlements Entitlements.plist "${FRAMEWORKS_DIR}"/*.dylib 2>/dev/null || true
+    codesign --force --sign "${APP_CERT}" --entitlements Entitlements.plist "${RESOURCES_DIR}/usbwifi" 2>/dev/null || true
+    codesign --force --sign "${APP_CERT}" --entitlements Entitlements.plist "${MACOS_DIR}/usbwifi" 2>/dev/null || true
+    codesign --force --options runtime --sign "${APP_CERT}" --entitlements Entitlements.plist "${MACOS_DIR}/EventHorizonApp"
+    codesign --force --deep --options runtime --sign "${APP_CERT}" --entitlements Entitlements.plist "${APP_BUNDLE}"
+    echo "  ✅ App Bundle signed successfully with Developer Certificate."
+else
     codesign --force --deep --sign - --entitlements Entitlements.plist "${APP_BUNDLE}" || true
-    echo "  ✅ App Bundle signed successfully."
+    echo "  ⚠️ App Bundle signed ad-hoc."
 fi
 
 # 5. Create Distribution DMG & PKG
@@ -96,8 +111,13 @@ if command -v hdiutil &> /dev/null; then
 fi
 
 if command -v productbuild &> /dev/null; then
-    productbuild --component "${APP_BUNDLE}" /Applications "${PKG_NAME}" || true
-    echo "✅ App Store PKG created at: ${PKG_NAME}"
+    if security find-identity -v | grep -q "${INSTALLER_CERT}"; then
+        productbuild --sign "${INSTALLER_CERT}" --component "${APP_BUNDLE}" /Applications "${PKG_NAME}"
+        echo "✅ Signed App Store PKG created at: ${PKG_NAME}"
+    else
+        productbuild --component "${APP_BUNDLE}" /Applications "${PKG_NAME}" || true
+        echo "✅ App Store PKG created at: ${PKG_NAME}"
+    fi
 fi
 
 echo ""
