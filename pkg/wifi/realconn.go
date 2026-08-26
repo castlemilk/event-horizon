@@ -190,7 +190,7 @@ func writeTempScript(prefix, body string) (string, error) {
 	var lastErr error
 	for _, dir := range candidates {
 		path := filepath.Join(dir, fmt.Sprintf("%s-%d.swift", prefix, time.Now().UnixNano()))
-		if err := os.WriteFile(path, []byte(body), 0o600); err == nil {
+		if err := os.WriteFile(path, []byte(body), 0o644); err == nil {
 			return path, nil
 		} else {
 			lastErr = err

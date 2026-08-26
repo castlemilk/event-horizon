@@ -487,6 +487,44 @@ func (p *PacketPump) sendTCPData(clientIP, serverIP net.IP, clientPort, serverPo
 	binary.BigEndian.PutUint16(tcp[16:18], tcpChk)
 
 	p.writeUtunFrame(pkt)
+
+	// Send FIN to gracefully close the stream for Connection: close
+	p.sendTCPFIN(clientIP, serverIP, clientPort, serverPort, serverSeq+uint32(len(payload)), clientAck)
+}
+
+func (p *PacketPump) sendTCPFIN(clientIP, serverIP net.IP, clientPort, serverPort uint16, serverSeq, clientAck uint32) {
+	ipHeaderLen := 20
+	tcpHeaderLen := 20
+	totalLen := ipHeaderLen + tcpHeaderLen
+
+	pkt := make([]byte, totalLen)
+
+	pkt[0] = 0x45
+	pkt[1] = 0x00
+	binary.BigEndian.PutUint16(pkt[2:4], uint16(totalLen))
+	binary.BigEndian.PutUint16(pkt[4:6], 0x1237)
+	pkt[6] = 0x40
+	pkt[7] = 0x00
+	pkt[8] = 64
+	pkt[9] = 6
+	copy(pkt[12:16], serverIP.To4())
+	copy(pkt[16:20], clientIP.To4())
+	ipChk := checksum(pkt[:ipHeaderLen])
+	binary.BigEndian.PutUint16(pkt[10:12], ipChk)
+
+	tcp := pkt[ipHeaderLen:]
+	binary.BigEndian.PutUint16(tcp[0:2], serverPort)
+	binary.BigEndian.PutUint16(tcp[2:4], clientPort)
+	binary.BigEndian.PutUint32(tcp[4:8], serverSeq)
+	binary.BigEndian.PutUint32(tcp[8:12], clientAck)
+	tcp[12] = 0x50 // Data offset: 20 bytes
+	tcp[13] = 0x11 // Flags: FIN | ACK
+	binary.BigEndian.PutUint16(tcp[14:16], 65535)
+
+	tcpChk := tcpChecksum(serverIP, clientIP, tcp)
+	binary.BigEndian.PutUint16(tcp[16:18], tcpChk)
+
+	p.writeUtunFrame(pkt)
 }
 
 func (p *PacketPump) sendTCPACK(clientIP, serverIP net.IP, clientPort, serverPort uint16, serverSeq, clientAck uint32) {

@@ -111,19 +111,38 @@ func (s *Server) Start() {
 			return
 		}
 
+		// Refresh real radio scan
+		_ = s.scanner.ScanRealNetworks(true)
+
 		ap, err := s.scanner.SelectHotspot(req.SSID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Connect exclusively via the USB Wi-Fi Dongle (libusb/utun stack)
-		// Built-in Wi-Fi (en0) remains on the host's default network.
+		// Reject connection if SSID is not observed by the radio
+		if ap.RSSI == 0 && ap.Channel == 0 && ap.BSSID == "" {
+			log.Printf("[API] Rejecting connection to %q: network not visible in radio scan", req.SSID)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(Response{
+				Status:  "error",
+				Message: fmt.Sprintf("Network %q not found in radio scan. Ensure the access point is powered on and in range.", req.SSID),
+			})
+			return
+		}
+
+		// Connect via real WPA association
 		conn := wifi.NewWPAConnection(req.SSID, req.Passphrase, ap.BSSID)
 		if err := conn.Connect(); err != nil {
 			log.Printf("[API] Dongle connection error: %v", err)
 			http.Error(w, "Dongle connection failed: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+
+		// Also associate host radio if requested or if it's the primary network
+		if err := wifi.AssociateViaCoreWLAN(req.SSID, req.Passphrase); err == nil {
+			log.Printf("[API] Associated system radio to '%s'", req.SSID)
 		}
 
 		s.scanner.SetConnected(req.SSID)
@@ -132,7 +151,7 @@ func (s *Server) Start() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(Response{
 			Status:  "success",
-			Message: fmt.Sprintf("USB Wi-Fi Dongle connected to '%s' (WPA2 Active)", req.SSID),
+			Message: fmt.Sprintf("Connected to '%s' (RSSI: %d dBm, Channel: %d)", req.SSID, ap.RSSI, ap.Channel),
 			Data:    ap,
 		})
 	}))

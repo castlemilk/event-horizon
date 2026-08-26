@@ -109,8 +109,13 @@ func TestFullE2EServerSuite(t *testing.T) {
 
 	// 5. E2E POST /api/wifi/connect
 	t.Run("E2E Connect Hotspot Endpoint", func(t *testing.T) {
+		hotspots := server.scanner.ListHotspots()
+		targetSSID := "SFH"
+		if len(hotspots) > 0 {
+			targetSSID = hotspots[0].SSID
+		}
 		payload := map[string]string{
-			"ssid":       "CNH Starlink",
+			"ssid":       targetSSID,
 			"passphrase": "starlink_secret",
 		}
 		jsonBytes, _ := json.Marshal(payload)
