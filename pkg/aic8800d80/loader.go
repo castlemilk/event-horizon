@@ -590,10 +590,11 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			zones = protocol.CloneRegZones()
 			chunk = protocol.BlockWriteChunkBytes
 			log.Printf("[AIC] REGISTER-WINDOW 1KB MODE: %dB chunks above 0x%x, halo zones %v", chunk, wall, zones)
-		case os.Getenv("AIC_WINDOW_1KB") != "":
+		case os.Getenv("AIC_WINDOW_WORD") != "":
 			zones = protocol.CloneRegZones()
-			chunk = protocol.BlockWriteChunkBytes
-			log.Printf("[AIC] REGISTER-WINDOW 1KB MODE: %dB chunks above 0x%x, halo zones %v", chunk, wall, zones)
+			chunk = 4
+			wordMode = true
+			log.Printf("[AIC] REGISTER-WINDOW WORD MODE: 4-byte word writes above 0x%x, halo zones %v", wall, zones)
 		case os.Getenv("AIC_WINDOW_16B") != "":
 			zones = protocol.CloneRegZones()
 			chunk = protocol.CloneSmallChunk
@@ -669,8 +670,16 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	lastMark := 0
 	for i, op := range ops {
 		opStart := time.Now()
-		if wordMode && len(op.Block) == 4 && op.Addr >= wall {
-			if err := protocol.MemWrite(dev, op.Addr, binary.LittleEndian.Uint32(op.Block)); err != nil {
+		if wordMode && op.Addr >= wall {
+			var val uint32
+			if len(op.Block) == 4 {
+				val = binary.LittleEndian.Uint32(op.Block)
+			} else {
+				buf := make([]byte, 4)
+				copy(buf, op.Block)
+				val = binary.LittleEndian.Uint32(buf)
+			}
+			if err := protocol.MemWrite(dev, op.Addr, val); err != nil {
 				return fmt.Errorf("upload fmacfw: op %d/%d (0x%08x, word write): %w", i+1, len(ops), op.Addr, err)
 			}
 		} else {
@@ -679,7 +688,15 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			}
 		}
 		if op.Addr >= wall {
-			time.Sleep(50 * time.Millisecond)
+			settle := 1 * time.Millisecond
+			if sVal := os.Getenv("AIC_WINDOW_SETTLE_MS"); sVal != "" {
+				if ms, err := strconv.Atoi(sVal); err == nil && ms >= 0 {
+					settle = time.Duration(ms) * time.Millisecond
+				}
+			}
+			if settle > 0 {
+				time.Sleep(settle)
+			}
 		}
 		writtenTotal += len(op.Block)
 		res.BytesUploaded += len(op.Block)
