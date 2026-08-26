@@ -26,27 +26,23 @@ struct MenuBarLabelView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if !store.isDaemonConnected {
-                Image(systemName: "wifi.slash")
-                Text("Offline")
-            } else if store.isConnecting {
-                Image(systemName: "wifi")
-                    .symbolEffect(.pulse)
-                Text("Connecting...")
-            } else if !store.activeConnectedNodes.isEmpty {
-                Image(systemName: "wifi")
-                if store.activeConnectedNodes.count > 1 {
-                    Text("\(store.activeConnectedNodes.first!.networkTarget) (+\(store.activeConnectedNodes.count - 1))")
-                } else {
-                    Text(store.activeConnectedNodes.first!.networkTarget)
-                }
-            } else if let ssid = store.primaryConnectedSSID {
-                Image(systemName: "wifi")
+            Image(systemName: iconName)
+            if let ssid = store.primaryConnectedSSID, !ssid.isEmpty {
                 Text(ssid)
-            } else {
-                Image(systemName: "wifi")
-                Text("Event Horizon")
+                    .font(.caption2.weight(.medium))
             }
+        }
+    }
+
+    private var iconName: String {
+        if !store.isDaemonConnected {
+            return "wifi.slash"
+        } else if store.isConnecting {
+            return "wifi.badge.plus"
+        } else if !store.activeConnectedNodes.isEmpty || store.primaryConnectedSSID != nil {
+            return "antenna.radiowaves.left.and.right"
+        } else {
+            return "wifi"
         }
     }
 }
