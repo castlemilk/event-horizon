@@ -250,7 +250,20 @@ func GetHardwareTopology() []HardwareTopology {
 			status = "Storage (ZeroCD) — ModeSwitch Required"
 			driverName = "USB Wi-Fi Dongle (ZeroCD Storage)"
 		} else if d.ProductID == ProductAicWlan {
-			status = "BootROM (Stage 1) — Awaiting Firmware"
+			bsdIface = "utun10"
+			ip = dongleIP
+			gw = dongleGateway
+			instProg := driver.GetInstaller().GetProgress()
+			if dongleConnectedSSID != "" {
+				status = fmt.Sprintf("Connected to '%s' (WLAN Operational)", dongleConnectedSSID)
+				netTarget = dongleConnectedSSID
+			} else if instProg.IsSuccess {
+				status = "Operational (Stage 2) — Firmware Staged"
+				netTarget = "utun10 Virtual Bridge"
+			} else {
+				status = "BootROM (Stage 1) — Ready to Flash Firmware"
+				netTarget = "Awaiting Uplink"
+			}
 		} else if d.ProductID == ProductAicOperational {
 			bsdIface = "utun10"
 			ip = dongleIP
