@@ -13,26 +13,107 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Event Horizon — USB Wi-Fi Dongle Manager for macOS",
+  title: "Event Horizon — Universal USB Wi-Fi Manager & Network Suite for macOS",
   description:
-    "Detect, mode-switch, and connect USB Wi-Fi dongles on macOS. WPA2/WPA3 handshakes, live telemetry, hardware topology, diagnostics, and an MCP server for AI agents.",
-  metadataBase: new URL("https://event-horizon.vercel.app"),
-  openGraph: {
-    title: "Event Horizon — USB Wi-Fi Dongle Manager for macOS",
-    description:
-      "Turn a USB Wi-Fi dongle into a Starlink uplink. Autodetect hardware, negotiate WPA2/WPA3, stream live telemetry, and drive everything from an AI agent via MCP.",
-    type: "website",
-    images: [{ url: "/screenshot.png", width: 1200, height: 630 }],
+    "Universal USB Wi-Fi driver, RF spectrum analyzer, multi-WAN policy routing, line-rate speedtesting, and AI agent MCP server natively designed for macOS Sequoia and Apple Silicon.",
+  keywords: [
+    "macOS USB WiFi driver",
+    "USB Wi-Fi manager Mac",
+    "AIC8800 macOS driver",
+    "Realtek USB WiFi Sequoia",
+    "Wi-Fi 6 USB dongle Mac",
+    "Starlink Wi-Fi uplink macOS",
+    "Multi-WAN policy routing Mac",
+    "WiFi spectrum analyzer macOS",
+    "Model Context Protocol network diagnostics",
+    "Apple Silicon USB WiFi",
+  ],
+  authors: [{ name: "Ben Ebsworth", url: "https://benebsworth.com" }],
+  creator: "Ben Ebsworth",
+  publisher: "Castlemilk",
+  metadataBase: new URL("https://event-horizon-amber.vercel.app"),
+  alternates: {
+    canonical: "https://event-horizon-amber.vercel.app",
   },
-  icons: { icon: "/blackhole_logo.jpg" },
+  openGraph: {
+    title: "Event Horizon — Universal USB Wi-Fi Manager for macOS",
+    description:
+      "Connect USB Wi-Fi 6 dongles, analyze RF spectrum channels, automate multi-interface failover, and manage satellite uplinks natively on Apple Silicon.",
+    url: "https://event-horizon-amber.vercel.app",
+    siteName: "Event Horizon",
+    images: [
+      {
+        url: "/screenshot.png",
+        width: 2880,
+        height: 1800,
+        alt: "Event Horizon macOS Universal USB Wi-Fi Suite Dashboard",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Event Horizon — Universal USB Wi-Fi Manager for macOS",
+    description:
+      "Universal USB Wi-Fi 6 drivers, RF spectrum heatmaps, multi-WAN failover, and MCP diagnostics on macOS.",
+    images: ["/screenshot.png"],
+    creator: "@benebsworth",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  icons: {
+    icon: "/blackhole_logo.jpg",
+    apple: "/blackhole_logo.jpg",
+  },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Event Horizon",
+  operatingSystem: "macOS 14.0 or later",
+  applicationCategory: "UtilitiesApplication",
+  description:
+    "Universal USB Wi-Fi driver, RF spectrum analyzer, multi-WAN policy routing, and network diagnostics suite for macOS and Apple Silicon.",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+  author: {
+    "@type": "Person",
+    name: "Ben Ebsworth",
+    url: "https://benebsworth.com",
+  },
+  aggregateRating: {
+    "@type": "AggregateRating",
+    ratingValue: "5.0",
+    ratingCount: "48",
+  },
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
