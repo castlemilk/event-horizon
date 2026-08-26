@@ -246,11 +246,12 @@ func GetHardwareTopology() []HardwareTopology {
 			driverName = fmt.Sprintf("%s (%s)", drv.Info().Family, drv.Info().Standard)
 		}
 
+		utunName := getActiveUtunInterface()
 		if d.IsStorage {
 			status = "Storage (ZeroCD) — ModeSwitch Required"
 			driverName = "USB Wi-Fi Dongle (ZeroCD Storage)"
 		} else if d.ProductID == ProductAicWlan {
-			bsdIface = "utun10"
+			bsdIface = utunName
 			ip = dongleIP
 			gw = dongleGateway
 			instProg := driver.GetInstaller().GetProgress()
@@ -259,20 +260,20 @@ func GetHardwareTopology() []HardwareTopology {
 				netTarget = dongleConnectedSSID
 			} else if instProg.IsSuccess {
 				status = "Operational (Stage 2) — Firmware Staged"
-				netTarget = "utun10 Virtual Bridge"
+				netTarget = fmt.Sprintf("%s Virtual Bridge", utunName)
 			} else {
 				status = "BootROM (Stage 1) — Ready to Flash Firmware"
 				netTarget = "Awaiting Uplink"
 			}
 		} else if d.ProductID == ProductAicOperational {
-			bsdIface = "utun10"
+			bsdIface = utunName
 			ip = dongleIP
 			gw = dongleGateway
 			if dongleConnectedSSID != "" {
 				status = fmt.Sprintf("Connected to '%s' (WLAN Operational)", dongleConnectedSSID)
 				netTarget = dongleConnectedSSID
 			} else {
-				status = "Connected (utun10 Active)"
+				status = fmt.Sprintf("Connected (%s Active)", utunName)
 				netTarget = "Starlink"
 			}
 		}
@@ -307,4 +308,18 @@ func GetHardwareTopology() []HardwareTopology {
 	})
 
 	return nodes
+}
+
+func getActiveUtunInterface() string {
+	out, err := exec.Command("ifconfig", "-l").Output()
+	if err == nil {
+		for _, name := range strings.Fields(string(out)) {
+			if strings.HasPrefix(name, "utun") {
+				if info, ierr := exec.Command("ifconfig", name).Output(); ierr == nil && strings.Contains(string(info), "192.168.100.") {
+					return name
+				}
+			}
+		}
+	}
+	return "utun5"
 }
