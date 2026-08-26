@@ -112,6 +112,9 @@ public struct MainDashboardView: View {
                                 }
                             )
 
+                        case .starlink:
+                            StarlinkDishView(store: store)
+
                         case .spectrum:
                             RFSpectrumAnalyzerView(store: store)
 
@@ -186,6 +189,8 @@ public struct MainDashboardView: View {
             return "Multi-dongle topology, USB bus controllers & per-device controls"
         case .wifi:
             return "In-range 802.11 Wi-Fi access points & network connections"
+        case .starlink:
+            return "Real-time celestial obstruction radar (101×101 SNR grid), satellite tracking & dish controls"
         case .spectrum:
             return "2.4 GHz & 5 GHz RF channel occupancy, interference & congestion heatmaps"
         case .routing:
