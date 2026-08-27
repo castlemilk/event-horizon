@@ -132,17 +132,12 @@ func (s *Server) Start() {
 			return
 		}
 
-		// Connect via real WPA association
+		// Connect via real WPA association for the USB Wi-Fi dongle
 		conn := wifi.NewWPAConnection(req.SSID, req.Passphrase, ap.BSSID)
 		if err := conn.Connect(); err != nil {
 			log.Printf("[API] Dongle connection error: %v", err)
 			http.Error(w, "Dongle connection failed: "+err.Error(), http.StatusInternalServerError)
 			return
-		}
-
-		// Also associate host radio if requested or if it's the primary network
-		if err := wifi.AssociateViaCoreWLAN(req.SSID, req.Passphrase); err == nil {
-			log.Printf("[API] Associated system radio to '%s'", req.SSID)
 		}
 
 		s.scanner.SetConnected(req.SSID)
@@ -151,7 +146,7 @@ func (s *Server) Start() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(Response{
 			Status:  "success",
-			Message: fmt.Sprintf("Connected to '%s' (RSSI: %d dBm, Channel: %d)", req.SSID, ap.RSSI, ap.Channel),
+			Message: fmt.Sprintf("USB Wi-Fi Dongle connected to '%s' (RSSI: %d dBm, Channel: %d)", req.SSID, ap.RSSI, ap.Channel),
 			Data:    ap,
 		})
 	}))
