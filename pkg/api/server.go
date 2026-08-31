@@ -132,7 +132,38 @@ func (s *Server) Start() {
 			return
 		}
 
-		// Connect via real WPA association for the USB Wi-Fi dongle
+		// Association is not implemented for the USB dongle.
+		//
+		// wifi.WPAConnection.Connect() logs an authentication, an
+		// association and a four-way handshake, sleeps between each, and
+		// returns nil unconditionally. It never touches the radio: the
+		// EAPOL exchange is a comment. The AIC8800 driver in
+		// pkg/aic8800d80 can load firmware and frame LMAC commands but
+		// exposes no association call, and wifi.AssociateToNetwork drives
+		// the host's CoreWLAN interface, which must stay untouched.
+		//
+		// Reporting success here recorded an SSID the dongle was never on,
+		// which every consumer then treated as a live association.
+		if !s.SimulateConnections {
+			log.Printf("[API] Refusing to report a connection to %q: dongle association is not implemented", req.SSID)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotImplemented)
+			json.NewEncoder(w).Encode(Response{
+				Status: "error",
+				Message: "association is not implemented for the USB dongle: the radio is " +
+					"scanned for real, but no code associates with a network. " +
+					"Start the daemon with --simulate to record an SSID anyway (nothing is associated).",
+				Data: map[string]interface{}{
+					"ssid":      req.SSID,
+					"visible":   true,
+					"rssi":      ap.RSSI,
+					"channel":   ap.Channel,
+					"simulated": false,
+				},
+			})
+			return
+		}
+
 		conn := wifi.NewWPAConnection(req.SSID, req.Passphrase, ap.BSSID)
 		if err := conn.Connect(); err != nil {
 			log.Printf("[API] Dongle connection error: %v", err)
@@ -140,6 +171,7 @@ func (s *Server) Start() {
 			return
 		}
 
+		log.Printf("[API] SIMULATED association to %q recorded (--simulate); the radio was not touched", req.SSID)
 		s.scanner.SetConnected(req.SSID)
 		usb.SetDongleConnected(req.SSID)
 
