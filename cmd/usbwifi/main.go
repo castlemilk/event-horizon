@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -35,11 +38,25 @@ func main() {
 		}
 	}
 
+	stop := flag.Bool("stop", false, "Signal a running daemon to exit, then return")
 	targetSSID := flag.String("ssid", "", "Target Wi-Fi SSID to connect (real association only when a passphrase is supplied)")
 	passphrase := flag.String("passphrase", "", "WPA2/WPA3 passphrase for the target SSID (required for a real connection)")
 	apiPort := flag.Int("port", 8990, "HTTP API Server port")
 	simulate := flag.Bool("simulate", false, "Force simulated 802.11 handshake instead of a real association")
 	flag.Parse()
+
+	// --stop exists so the daemon can be restarted without a password
+	// prompt. It runs as root for libusb and utun, so only root can
+	// signal it; the sudoers rule that lets this binary start under
+	// `sudo -n` also covers running it with --stop, whereas `sudo pkill`
+	// is a different command and is not covered. Without this, a
+	// relaunch from a non-interactive context (task, a script, an IDE)
+	// silently leaves the old daemon serving and redeploys nothing.
+	if *stop {
+		os.Exit(stopRunningDaemon())
+	}
+
+	writePIDFile()
 
 	fmt.Println("================================================================")
 	fmt.Println("  📡 Event Horizon USB Wi-Fi & Network Manager Daemon v1.0.0")
@@ -140,4 +157,100 @@ func printRootUsage() {
 	fmt.Println("  --simulate             Force simulated 802.11 handshake")
 	fmt.Println()
 	fmt.Println("Run `./bin/usbwifi <subcommand> --help` for subcommand options.")
+}
+
+// pidFilePath is where the daemon records its PID so a later --stop can
+// find it. /var/run is root-writable, which the daemon already is.
+const pidFilePath = "/var/run/usbwifi.pid"
+
+// writePIDFile records this process for a later --stop. Failure is not
+// fatal: --stop falls back to scanning for the process by name.
+func writePIDFile() {
+	if err := os.WriteFile(pidFilePath, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
+		log.Printf("[INIT] could not write %s: %v (--stop will fall back to a process scan)", pidFilePath, err)
+		return
+	}
+}
+
+// stopRunningDaemon signals any running daemon to exit and waits for the
+// API port to close. Returns a process exit code.
+func stopRunningDaemon() int {
+	pid := readPIDFile()
+	if pid == 0 {
+		pid = findDaemonPID()
+	}
+	if pid == 0 {
+		fmt.Println("no running usbwifi daemon found")
+		return 0
+	}
+	if pid == os.Getpid() {
+		return 0
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not address pid %d: %v\n", pid, err)
+		return 1
+	}
+	// SIGTERM first so the daemon can tear the utun interface down.
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		fmt.Fprintf(os.Stderr, "could not signal pid %d: %v\n", pid, err)
+		return 1
+	}
+
+	for range 40 { // up to 4s
+		if !processAlive(pid) {
+			_ = os.Remove(pidFilePath)
+			fmt.Printf("stopped usbwifi daemon (pid %d)\n", pid)
+			return 0
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// It did not go quietly.
+	_ = proc.Signal(syscall.SIGKILL)
+	time.Sleep(300 * time.Millisecond)
+	_ = os.Remove(pidFilePath)
+	fmt.Printf("force-killed usbwifi daemon (pid %d)\n", pid)
+	return 0
+}
+
+func readPIDFile() int {
+	b, err := os.ReadFile(pidFilePath)
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || pid <= 0 || !processAlive(pid) {
+		return 0
+	}
+	return pid
+}
+
+// findDaemonPID locates a running daemon when no usable pidfile exists,
+// which covers daemons started before --stop existed.
+func findDaemonPID() int {
+	out, err := exec.Command("pgrep", "-x", "usbwifi").Output()
+	if err != nil {
+		return 0
+	}
+	self := os.Getpid()
+	for _, line := range strings.Fields(string(out)) {
+		pid, err := strconv.Atoi(line)
+		if err != nil || pid == self {
+			continue
+		}
+		return pid
+	}
+	return 0
+}
+
+// processAlive reports whether pid is still running. Signal 0 performs
+// the permission and existence checks without delivering anything.
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
 }
