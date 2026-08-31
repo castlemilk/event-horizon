@@ -29,21 +29,39 @@ tasks:
       - pkill -9 -f "Event Horizon" || true
       - pkill -9 -f "Universal WiFi Manager" || true
       - pkill -9 -f "Starlink WiFi Manager" || true
-      # The daemon runs as root (it drives libusb and creates the utun
-      # interface), so an unprivileged pkill fails with "Operation not
-      # permitted" and `|| true` swallows it. The rebuild then completes
-      # and relaunches while the OLD binary is still serving :8990, which
-      # looks like a successful deploy that changed nothing.
+      # The daemon runs as root (libusb + utun), so stopping it needs
+      # sudo — and `task` gives sudo no TTY, so it must already be
+      # authenticated. Check that first and say so, rather than letting
+      # three kills fail silently behind `|| true`.
+      - |
+        if ! sudo -n true 2>/dev/null; then
+          echo "" >&2
+          echo "This task must stop the root-owned usbwifi daemon, which needs sudo," >&2
+          echo "and task cannot prompt for a password." >&2
+          echo "" >&2
+          echo "  Run 'sudo -v' in this terminal, then re-run 'task relaunch'." >&2
+          echo "" >&2
+          exit 1
+        fi
       - sudo pkill -9 -x "usbwifi" || true
       - sudo pkill -9 -x "usbwifi-mcp" || true
       - killall -9 swift-build swift-frontend 2>/dev/null || true
       - sudo lsof -ti :8990 | xargs -r sudo kill -9 || true
-      # Fail loudly rather than silently redeploying nothing.
+      # Verify with an unprivileged check. The socket is root-owned, so
+      # lsof without sudo cannot see it, but anybody can try to connect —
+      # and a check that needs the same privilege that just failed is no
+      # check at all. (The previous version used `sudo lsof`, which
+      # errored for want of a password and was read as "port is free".)
       - |
-        if sudo lsof -ti :8990 >/dev/null 2>&1; then
-          echo "ERROR: something is still listening on :8990; the rebuild would not take effect." >&2
-          exit 1
-        fi
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+          if ! nc -z -G 1 127.0.0.1 8990 2>/dev/null; then
+            exit 0
+          fi
+          sleep 0.5
+        done
+        echo "ERROR: :8990 is still accepting connections after the kills." >&2
+        echo "The rebuild would relaunch while the old daemon keeps serving." >&2
+        exit 1
       - task: build
       - echo "==> Relaunching {{.BUNDLE_DIR}}..."
       - open "{{.BUNDLE_DIR}}"
