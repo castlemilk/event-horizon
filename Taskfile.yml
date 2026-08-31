@@ -29,10 +29,21 @@ tasks:
       - pkill -9 -f "Event Horizon" || true
       - pkill -9 -f "Universal WiFi Manager" || true
       - pkill -9 -f "Starlink WiFi Manager" || true
-      - pkill -9 -x "usbwifi" || true
-      - pkill -9 -x "usbwifi-mcp" || true
+      # The daemon runs as root (it drives libusb and creates the utun
+      # interface), so an unprivileged pkill fails with "Operation not
+      # permitted" and `|| true` swallows it. The rebuild then completes
+      # and relaunches while the OLD binary is still serving :8990, which
+      # looks like a successful deploy that changed nothing.
+      - sudo pkill -9 -x "usbwifi" || true
+      - sudo pkill -9 -x "usbwifi-mcp" || true
       - killall -9 swift-build swift-frontend 2>/dev/null || true
-      - lsof -ti :8990 | xargs kill -9 || true
+      - sudo lsof -ti :8990 | xargs -r sudo kill -9 || true
+      # Fail loudly rather than silently redeploying nothing.
+      - |
+        if sudo lsof -ti :8990 >/dev/null 2>&1; then
+          echo "ERROR: something is still listening on :8990; the rebuild would not take effect." >&2
+          exit 1
+        fi
       - task: build
       - echo "==> Relaunching {{.BUNDLE_DIR}}..."
       - open "{{.BUNDLE_DIR}}"

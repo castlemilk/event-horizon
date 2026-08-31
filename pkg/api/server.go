@@ -195,25 +195,43 @@ func (s *Server) Start() {
 		})
 	}))
 
-	// GET /api/starlink/status - Direct Dish Telemetry (queries 192.168.100.1 / utun bridge)
+	// GET /api/starlink/status - link state, and dish telemetry only when
+	// a terminal is genuinely reachable.
+	//
+	// This handler used to return a complete, entirely hardcoded dish
+	// payload — ONLINE, 185 Mbps down, 22 Mbps up, 28ms, SNR 9.8, a fixed
+	// dish id and firmware string — regardless of whether any terminal
+	// was present. Consumers reasonably believed it and copied those
+	// numbers into their own source as defaults. It now reports what the
+	// daemon actually knows: which network the dongle is on, and nothing
+	// about a dish it cannot see.
 	mux.HandleFunc("/api/starlink/status", corsHandler(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(Response{
-			Status: "success",
-			Data: map[string]interface{}{
-				"device_state":     "ONLINE",
-				"dish_id":          "ut-starlink-001",
-				"hardware_version": "rev3_proto2",
-				"snr":              9.8,
-				"downlink_bps":     185000000,
-				"uplink_bps":       22000000,
-				"ping_latency_ms":  28,
-				"ping_drop_rate":   0.0,
-				"obstruction_pct":  0.0,
-				"alerts":           []string{},
-				"status":           "CONNECTED",
-			},
-		})
+
+		connectedSSID := s.scanner.ConnectedSSID()
+		if connectedSSID == "" {
+			connectedSSID = usb.GetDongleConnected()
+		}
+
+		data := map[string]interface{}{
+			// What the daemon genuinely observes.
+			"ssid":           connectedSSID,
+			"associated":     connectedSSID != "",
+			"bridge_up":      tun.GlobalPump() != nil,
+			"dish_reachable": false,
+			"device_state":   "UNKNOWN",
+			"status":         "UNKNOWN",
+		}
+
+		if connectedSSID == "" {
+			data["reason"] = "the dongle is not associated with any network"
+		} else {
+			data["reason"] = "associated with " + connectedSSID +
+				", but no Starlink terminal answered through the bridge"
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(Response{Status: "success", Data: data})
 	}))
 
 	// GET /api/network/telemetry - Live bandwidth speeds, packet counts & interface stats
@@ -244,16 +262,16 @@ func (s *Server) Start() {
 		json.NewEncoder(w).Encode(Response{
 			Status: "success",
 			Data: map[string]any{
-				"packets_in":      st.PacketsIn,
-				"packets_out":     st.PacketsOut,
-				"bytes_in":        st.BytesIn,
-				"bytes_out":       st.BytesOut,
-				"ipv4":            st.IPv4,
-				"ipv6":            st.IPv6,
-				"icmp":            st.ICMP,
-				"tcp":             st.TCP,
-				"udp":             st.UDP,
-				"other_l4":        st.OtherL4,
+				"packets_in":       st.PacketsIn,
+				"packets_out":      st.PacketsOut,
+				"bytes_in":         st.BytesIn,
+				"bytes_out":        st.BytesOut,
+				"ipv4":             st.IPv4,
+				"ipv6":             st.IPv6,
+				"icmp":             st.ICMP,
+				"tcp":              st.TCP,
+				"udp":              st.UDP,
+				"other_l4":         st.OtherL4,
 				"tcp_syns_to_dish": st.TCPSYNToDish,
 				"real_frames_seen": st.TCP+st.UDP+st.OtherL4 > 0,
 			},

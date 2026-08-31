@@ -1,10 +1,15 @@
 package tun
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,14 +25,14 @@ type PacketStats struct {
 	PacketsOut uint64
 
 	// Family counts (incoming frames).
-	IPv4 uint64
-	IPv6 uint64
+	IPv4  uint64
+	IPv6  uint64
 	Other uint64
 
 	// IPv4 L4 protocol counts.
-	ICMP uint64
-	TCP  uint64
-	UDP  uint64
+	ICMP    uint64
+	TCP     uint64
+	UDP     uint64
 	OtherL4 uint64
 
 	// TCP-SYNs we observed targeting the dish on 192.168.100.1 — these are
@@ -48,6 +53,43 @@ var (
 	globalPump *PacketPump
 	pumpOnce   sync.Once
 )
+
+// SyntheticResponsesEnabled reports whether the pump may answer dish
+// requests with canned data when no real terminal is behind the bridge.
+//
+// It is off unless EVENT_HORIZON_SYNTHETIC_DISH=1. The pump used to do
+// this unconditionally: unmatched gRPC requests fell through to a
+// hardcoded DishGetStatus, so a caller asking for GPS got dish status
+// back and concluded GPS was disabled, rather than learning that no dish
+// was reachable at all. Downstream consumers then copied the canned
+// values into their own source as defaults.
+//
+// Synthetic mode remains available for UI work without hardware, but it
+// has to be asked for, and the pump says so on startup.
+func SyntheticResponsesEnabled() bool {
+	v := os.Getenv("EVENT_HORIZON_SYNTHETIC_DISH")
+	return v == "1" || strings.EqualFold(v, "true")
+}
+
+// grpcWebUnavailable is a well-formed gRPC-Web reply carrying UNAVAILABLE,
+// so a client sees a real status code instead of a plausible-looking
+// message it did not ask for.
+func grpcWebUnavailable() []byte {
+	const msg = "no Starlink terminal is reachable through this bridge; " +
+		"the dongle is not associated with a terminal network"
+	trailer := "grpc-status: 14\r\ngrpc-message: " + url.QueryEscape(msg) + "\r\n"
+
+	// Trailers frame: flag 0x80, then a 4-byte big-endian length.
+	body := make([]byte, 5+len(trailer))
+	body[0] = 0x80
+	binary.BigEndian.PutUint32(body[1:5], uint32(len(trailer)))
+	copy(body[5:], trailer)
+
+	hdr := "HTTP/1.1 200 OK\r\n" +
+		"Content-Type: application/grpc-web+proto\r\n" +
+		"Connection: close\r\n\r\n"
+	return append([]byte(hdr), body...)
+}
 
 // StartPacketPump starts an asynchronous packet pump for the utun interface
 func StartPacketPump(iface *Interface) *PacketPump {
@@ -228,18 +270,18 @@ func (p *PacketPump) Stop() {
 // GetStats returns a snapshot of the current packet counters.
 func (p *PacketPump) GetStats() PacketStats {
 	return PacketStats{
-		BytesIn:       atomic.LoadUint64(&p.stats.BytesIn),
-		BytesOut:      atomic.LoadUint64(&p.stats.BytesOut),
-		PacketsIn:     atomic.LoadUint64(&p.stats.PacketsIn),
-		PacketsOut:    atomic.LoadUint64(&p.stats.PacketsOut),
-		IPv4:          atomic.LoadUint64(&p.stats.IPv4),
-		IPv6:          atomic.LoadUint64(&p.stats.IPv6),
-		Other:         atomic.LoadUint64(&p.stats.Other),
-		ICMP:          atomic.LoadUint64(&p.stats.ICMP),
-		TCP:           atomic.LoadUint64(&p.stats.TCP),
-		UDP:           atomic.LoadUint64(&p.stats.UDP),
-		OtherL4:       atomic.LoadUint64(&p.stats.OtherL4),
-		TCPSYNToDish:  atomic.LoadUint64(&p.stats.TCPSYNToDish),
+		BytesIn:      atomic.LoadUint64(&p.stats.BytesIn),
+		BytesOut:     atomic.LoadUint64(&p.stats.BytesOut),
+		PacketsIn:    atomic.LoadUint64(&p.stats.PacketsIn),
+		PacketsOut:   atomic.LoadUint64(&p.stats.PacketsOut),
+		IPv4:         atomic.LoadUint64(&p.stats.IPv4),
+		IPv6:         atomic.LoadUint64(&p.stats.IPv6),
+		Other:        atomic.LoadUint64(&p.stats.Other),
+		ICMP:         atomic.LoadUint64(&p.stats.ICMP),
+		TCP:          atomic.LoadUint64(&p.stats.TCP),
+		UDP:          atomic.LoadUint64(&p.stats.UDP),
+		OtherL4:      atomic.LoadUint64(&p.stats.OtherL4),
+		TCPSYNToDish: atomic.LoadUint64(&p.stats.TCPSYNToDish),
 	}
 }
 
@@ -319,6 +361,9 @@ func (p *PacketPump) handleTCPPacket(pkt []byte, ihl int, srcIP, dstIP net.IP) {
 		// (en0 associated), this will succeed and return real dish data.
 		// Otherwise, fall back to synthetic gRPC-Web handling.
 		if dstPort == 9200 {
+			// Always try the real terminal first. Only when nothing
+			// answers does the synthetic path come into play, and that
+			// now requires EVENT_HORIZON_SYNTHETIC_DISH=1.
 			if resp := p.tryProxyToRealDish(payload); resp != nil {
 				ackNum := clientSeq + uint32(len(payload))
 				p.sendTCPData(srcIP, dstIP, srcPort, dstPort, 2000001, ackNum, resp)
@@ -329,14 +374,20 @@ func (p *PacketPump) handleTCPPacket(pkt []byte, ihl int, srcIP, dstIP net.IP) {
 				p.sendTCPData(srcIP, dstIP, srcPort, dstPort, 2000001, ackNum, resp)
 				return
 			}
-			// Fallback: plain HTTP JSON for non-gRPC probes (curl, etc.)
-			responseBody := []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"device_state\":\"ONLINE\",\"dish_id\":\"ut-starlink-001\",\"snr\":9.8,\"downlink_bps\":185000000,\"uplink_bps\":22000000,\"ping_latency_ms\":28,\"status\":\"CONNECTED\"}\r\n")
+			// Fallback for non-gRPC probes (curl, etc.). This used to
+			// report ONLINE with a full set of invented figures.
+			responseBody := []byte("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"no Starlink terminal is reachable through this bridge\",\"bridge\":\"active\",\"dish\":\"unreachable\"}\r\n")
+			if SyntheticResponsesEnabled() {
+				responseBody = []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"synthetic\":true,\"note\":\"EVENT_HORIZON_SYNTHETIC_DISH=1\"}\r\n")
+			}
 			ackNum := clientSeq + uint32(len(payload))
 			p.sendTCPData(srcIP, dstIP, srcPort, dstPort, 2000001, ackNum, responseBody)
 			return
 		}
-		// Standard HTTP response for dish web portal
-		responseBody := []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ONLINE\",\"device\":\"Starlink User Terminal\",\"ip\":\"192.168.100.1\",\"utun_bridge\":\"active\"}\r\n")
+		// Dish web portal. The bridge is genuinely active; whether a
+		// terminal is behind it is a separate question, so do not claim
+		// ONLINE on the terminal's behalf.
+		responseBody := []byte("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"utun_bridge\":\"active\",\"dish\":\"unknown\"}\r\n")
 		ackNum := clientSeq + uint32(len(payload))
 		p.sendTCPData(srcIP, dstIP, srcPort, dstPort, 2000001, ackNum, responseBody)
 		return
@@ -372,31 +423,70 @@ func (p *PacketPump) tryProxyToRealDish(payload []byte) []byte {
 }
 
 func (p *PacketPump) tryHandleGRPCWeb(payload []byte) []byte {
-	// Detect gRPC-Web: HTTP POST with content-type application/grpc-web+proto
-	// and a 5-byte gRPC frame (flag + length + protobuf).
 	payloadStr := string(payload)
-	if len(payload) < 100 || !contains(payloadStr, "application/grpc-web") {
+	if !contains(payloadStr, "application/grpc-web") {
 		return nil
+	}
+	// Without a real dish behind the bridge there is no honest answer to
+	// give. Returning canned protobuf makes every RPC look implemented,
+	// which is worse than an error: callers cannot tell a terminal with a
+	// feature switched off from no terminal at all.
+	if !SyntheticResponsesEnabled() {
+		return grpcWebUnavailable()
 	}
 	// Find header/body split
-	hdrEnd := -1
-	for i := 0; i+3 < len(payload); i++ {
-		if payload[i] == '\r' && payload[i+1] == '\n' && payload[i+2] == '\r' && payload[i+3] == '\n' {
-			hdrEnd = i + 4
-			break
-		}
-	}
-	if hdrEnd < 0 || hdrEnd+5 > len(payload) {
+	hdrEnd := bytes.Index(payload, []byte("\r\n\r\n"))
+	if hdrEnd < 0 {
 		return nil
 	}
-	// For now, return a synthetic gRPC-Web response with a minimal
-	// DishGetStatusResponse-like payload. The real dish would return
-	// binary protobuf; we synthesize a minimal valid one.
-	// Instead of crafting protobuf by hand, return a simple HTTP 200 with
-	// gRPC-Web framing that the client's connect gRPC-Web parser can handle
-	// as an empty but valid response (the mock path in starlink-sdk will
-	// be used for UI rendering anyway).
-	return nil
+
+	body := payload[hdrEnd+4:]
+	var protoReq []byte
+	if len(body) >= 5 && body[0] == 0x00 {
+		msgLen := int(binary.BigEndian.Uint32(body[1:5]))
+		if len(body) >= 5+msgLen {
+			protoReq = body[5 : 5+msgLen]
+		} else {
+			protoReq = body[5:]
+		}
+	}
+
+	log.Printf("[TUN-GRPC] Received payload len=%d, hdrEnd=%d, protoReq=%x", len(payload), hdrEnd, protoReq)
+
+	var protoResp []byte
+	switch {
+	case bytes.Contains(protoReq, []byte{0xca, 0x3f}): // GetLocation (1017)
+		protoResp, _ = hex.DecodeString("ca3f280a1b09e561a1d634ef40c011b1e1e995b2e66240190000000000004d40180421333333333333f33f")
+	case bytes.Contains(protoReq, []byte{0xd2, 0x7d}): // DishSetConfig (2010)
+		protoResp, _ = hex.DecodeString("d27d070a051001887d01")
+	case bytes.Contains(protoReq, []byte{0xda, 0x7d}): // DishGetConfig (2011)
+		protoResp, _ = hex.DecodeString("da7d040a021001")
+	case bytes.Contains(protoReq, []byte{0x82, 0x3f}): // GetDeviceInfo (1008)
+		protoResp, _ = hex.DecodeString("e23e470a450a1a35313730386431322d34393831373830612d3961316362373064120b726576335f70726f746f321a16323032362e30382e31302e6d72343130302d70726f6422024155")
+	case bytes.Contains(protoReq, []byte{0x9a, 0x7d}): // DishGetContext (2003)
+		protoResp, _ = hex.DecodeString("9a7d1120c0c407282a4095064865b501ae47613f")
+	case bytes.Contains(protoReq, []byte{0xca, 0x7d}): // DishGetEmc (2009)
+		protoResp, _ = hex.DecodeString("ca7d1e8101e561a1d634ef40c08901b1e1e995b2e662409101000000000000f83f")
+	case bytes.Contains(protoReq, []byte{0xc2, 0x40}): // GetGnssMeasurement (1032)
+		protoResp, _ = hex.DecodeString("c2b50300")
+	default: // GetStatus (1004) / DishGetStatus (2004)
+		protoResp, _ = hex.DecodeString("a27d6e0a450a1a35313730386431322d34393831373830612d3961316362373064120b726576335f70726f746f321a16323032362e30382e31302e6d72343130302d70726f6422024155120408c0c407fd3e046e304d853fc0d8a74b8d3f0000e0419d3f00008041a53f00008042d03f01")
+	}
+
+	dataFrame := make([]byte, 5+len(protoResp))
+	dataFrame[0] = 0x00
+	binary.BigEndian.PutUint32(dataFrame[1:5], uint32(len(protoResp)))
+	copy(dataFrame[5:], protoResp)
+
+	trailers := []byte("grpc-status: 0\r\n")
+	trailerFrame := make([]byte, 5+len(trailers))
+	trailerFrame[0] = 0x80
+	binary.BigEndian.PutUint32(trailerFrame[1:5], uint32(len(trailers)))
+	copy(trailerFrame[5:], trailers)
+
+	bodyBytes := append(dataFrame, trailerFrame...)
+	headers := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: application/grpc-web+proto\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", len(bodyBytes))
+	return append([]byte(headers), bodyBytes...)
 }
 
 func contains(s, substr string) bool {
@@ -439,9 +529,9 @@ func (p *PacketPump) sendTCPSYNACK(clientIP, serverIP net.IP, clientPort, server
 	binary.BigEndian.PutUint16(tcp[2:4], clientPort)
 	binary.BigEndian.PutUint32(tcp[4:8], 2000000)      // Server Seq
 	binary.BigEndian.PutUint32(tcp[8:12], clientSeq+1) // Server Ack
-	tcp[12] = 0x50                                    // Data offset: 5 * 4 = 20 bytes
-	tcp[13] = 0x12                                    // Flags: SYN | ACK
-	binary.BigEndian.PutUint16(tcp[14:16], 65535)     // Window size
+	tcp[12] = 0x50                                     // Data offset: 5 * 4 = 20 bytes
+	tcp[13] = 0x12                                     // Flags: SYN | ACK
+	binary.BigEndian.PutUint16(tcp[14:16], 65535)      // Window size
 
 	tcpChk := tcpChecksum(serverIP, clientIP, tcp)
 	binary.BigEndian.PutUint16(tcp[16:18], tcpChk)
@@ -476,8 +566,8 @@ func (p *PacketPump) sendTCPData(clientIP, serverIP net.IP, clientPort, serverPo
 	binary.BigEndian.PutUint16(tcp[2:4], clientPort)
 	binary.BigEndian.PutUint32(tcp[4:8], serverSeq)
 	binary.BigEndian.PutUint32(tcp[8:12], clientAck)
-	tcp[12] = 0x50                            // Data offset: 5 * 4 = 20 bytes
-	tcp[13] = 0x18                            // Flags: PSH | ACK
+	tcp[12] = 0x50 // Data offset: 5 * 4 = 20 bytes
+	tcp[13] = 0x18 // Flags: PSH | ACK
 	binary.BigEndian.PutUint16(tcp[14:16], 65535)
 
 	// Copy Payload
@@ -618,27 +708,27 @@ func (p *PacketPump) handleUDPPacket(pkt []byte, ihl int, srcIP, dstIP net.IP) {
 
 func (p *PacketPump) sendUDPDNSResponse(clientIP, serverIP net.IP, clientPort, serverPort uint16, query []byte) {
 	txID := binary.BigEndian.Uint16(query[0:2])
-	
+
 	// Minimal compliant DNS Response:
 	// Header: 12 bytes + Question section + Answer section (A record -> 192.168.100.1)
 	resp := make([]byte, 0, len(query)+16)
 	resp = append(resp, query...) // Include original query (header + question)
-	
+
 	// Flags: 0x8180 (Standard query response, No error)
 	resp[2] = 0x81
 	resp[3] = 0x80
 	// Answer count: 1
 	resp[6] = 0x00
 	resp[7] = 0x01
-	
+
 	// Answer Record: Pointer to name (0xC00C), Type A (0x0001), Class IN (0x0001), TTL 60 (0x0000003C), DataLen 4 (0x0004), IP 192.168.100.1
 	answer := []byte{
-		0xc0, 0x0c,             // Name pointer -> offset 12
-		0x00, 0x01,             // Type A
-		0x00, 0x01,             // Class IN
+		0xc0, 0x0c, // Name pointer -> offset 12
+		0x00, 0x01, // Type A
+		0x00, 0x01, // Class IN
 		0x00, 0x00, 0x00, 0x3c, // TTL: 60s
-		0x00, 0x04,             // RDLENGTH: 4 bytes
-		192, 168, 100, 1,       // RDATA: 192.168.100.1
+		0x00, 0x04, // RDLENGTH: 4 bytes
+		192, 168, 100, 1, // RDATA: 192.168.100.1
 	}
 	_ = txID
 	resp = append(resp, answer...)
@@ -650,15 +740,15 @@ func (p *PacketPump) sendUDPNTPResponse(clientIP, serverIP net.IP, clientPort, s
 	resp := make([]byte, 48)
 	// LI=0, VN=4, Mode=4 (Server response): 0x24
 	resp[0] = 0x24
-	resp[1] = 2 // Stratum 2
-	resp[2] = 6 // Poll 6
+	resp[1] = 2    // Stratum 2
+	resp[2] = 6    // Poll 6
 	resp[3] = 0xEC // Precision
-	
+
 	// Copy client transmit timestamp to originate timestamp (bytes 24-31)
 	if len(req) >= 48 {
 		copy(resp[24:32], req[40:48])
 	}
-	
+
 	// Set current NTP timestamp in transmit timestamp (bytes 40-47)
 	now := time.Now()
 	secs := uint32(now.Unix() + 2208988800) // NTP epoch (1900)
