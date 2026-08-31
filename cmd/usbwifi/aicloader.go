@@ -1,7 +1,7 @@
 // aicloader subcommand. Invoked as:
 //
-//   sudo ./bin/usbwifi aicloader --firmware-dir ~/.event-horizon/firmware/aic8800D80
-//   sudo ./bin/usbwifi aicloader --status         # detect stage, no upload
+//	sudo ./bin/usbwifi aicloader --firmware-dir ~/.event-horizon/firmware/aic8800D80
+//	sudo ./bin/usbwifi aicloader --status         # detect stage, no upload
 //
 // Drives the AIC8800D80 from BootROM (VID:0a69c PID:8d80) or ZeroCD
 // (VID:1111 PID:1111) into Operational (0a69c:8d81 or 0a69c:8d83).
@@ -99,9 +99,31 @@ func runAICLoader(args []string) int {
 	// Stop the running daemon if requested. The daemon keeps the USB
 	// device claimed; we need to release it before opening our own.
 	if *killDaemon {
+		// The macOS app's RuntimeSupervisor respawns the daemon every
+		// few seconds, and each respawn opens the dongle. Killing only
+		// the daemon leaves the app to re-grab the device mid-upload,
+		// which is how a firmware write dies with LIBUSB_ERROR_TIMEOUT
+		// partway through. Stop the app first, then the daemon.
+		log.Printf("stopping the Event Horizon app so it cannot respawn the daemon...")
+		_ = exec.Command("pkill", "-9", "-f", "Event Horizon.app").Run()
+		_ = exec.Command("pkill", "-9", "-f", "EventHorizonApp").Run()
+
 		log.Printf("stopping running usbwifi / usbwifi-mcp daemon...")
-		_ = exec.Command("pkill", "-9", "-f", "usbwifi").Run()
-		_ = exec.Command("pkill", "-9", "-f", "usbwifi-mcp").Run()
+		// Graceful stop first so utun is torn down cleanly; SIGKILL only
+		// if it does not go.
+		_ = exec.Command("pkill", "-TERM", "-x", "usbwifi").Run()
+		time.Sleep(500 * time.Millisecond)
+		_ = exec.Command("pkill", "-9", "-x", "usbwifi").Run()
+		_ = exec.Command("pkill", "-9", "-x", "usbwifi-mcp").Run()
+
+		// Wait for USB exclusive ownership to actually release, rather
+		// than a fixed 500ms that was sometimes too short.
+		for range 20 {
+			if exec.Command("pgrep", "-x", "usbwifi").Run() != nil {
+				break // no usbwifi process remains
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
 
