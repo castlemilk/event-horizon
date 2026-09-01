@@ -335,6 +335,19 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 		log.Printf("[AIC] convention 0 failed: %v", err)
 	}
 
+	// Rung 1.5: clear any halted bulk endpoint. A prior aborted transfer
+	// can leave bulk IN halted so every read times out while sends still
+	// succeed; clearing the halt is cheaper and less disruptive than a
+	// port reset, so try it before rung 2.
+	if !calibrated {
+		log.Printf("[AIC] clearing endpoint halts before reset")
+		dev.ClearHalts()
+		if val, err := probe(protocol.ConvLinux); err == nil {
+			accept(val, protocol.ConvLinux)
+			calibrated = true
+		}
+	}
+
 	// Rung 2: USB port reset.
 	if !calibrated {
 		log.Printf("[AIC] device silent — attempting USB port reset")

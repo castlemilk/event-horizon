@@ -72,6 +72,16 @@ static int reset_device(libusb_device_handle *h) {
 	return libusb_reset_device(h);
 }
 
+// clear_halt clears a STALL/halt condition on one endpoint. A bulk IN
+// endpoint left halted by a prior aborted transfer answers every read
+// with LIBUSB_ERROR_TIMEOUT until it is cleared — which a port reset,
+// especially behind a hub, does not reliably do. Clearing both bulk
+// endpoints after claim is the standard remedy for the "OUT succeeds, IN
+// times out" symptom.
+static int clear_halt(libusb_device_handle *h, unsigned char ep) {
+	return libusb_clear_halt(h, ep);
+}
+
 static int get_active_config(libusb_device *dev, struct libusb_config_descriptor **cfg) {
 	return libusb_get_active_config_descriptor(dev, cfg);
 }
@@ -156,6 +166,7 @@ static int dump_config(struct libusb_config_descriptor *cfg, char *buf, int cap)
 import "C"
 import (
 	"fmt"
+	"log"
 	"unsafe"
 )
 
@@ -351,6 +362,23 @@ func (d *USBDevice) ClaimInterface(iface int) error {
 	return nil
 }
 
+// ClearHalts clears STALL conditions on the discovered bulk endpoints.
+// Called as an explicit recovery step, not on the happy path: on a
+// freshly enumerated healthy device the endpoints are not halted, and the
+// proven boot sequence should not be perturbed. It targets the case where
+// a prior aborted transfer left an endpoint halted so that reads time out.
+// Safe to call repeatedly; errors are advisory, not fatal.
+func (d *USBDevice) ClearHalts() {
+	for _, ep := range []uint8{d.bulkIn, d.bulkOut, d.msgIn, d.msgOut} {
+		if ep == 0 {
+			continue
+		}
+		if rc := C.clear_halt(d.handle, C.uchar(ep)); rc < 0 && rc != C.LIBUSB_ERROR_NOT_FOUND {
+			log.Printf("[AIC] clear_halt ep 0x%02x: %s", ep, libusbErrname(rc))
+		}
+	}
+}
+
 // ReleaseInterface releases a previously claimed interface.
 func (d *USBDevice) ReleaseInterface(iface int) {
 	C.release_interface(d.handle, C.int(iface))
@@ -471,10 +499,10 @@ type DeviceLocation struct {
 
 // AIC8800D80 fixed bulk endpoint addresses. From the Linux driver:
 //
-//   aic_load_fw/aicwf_usb.c:
-//     bulk_in_pipe      = 0x84 (IN)
-//     bulk_out_pipe     = 0x04 (OUT)
-//     msg_out_pipe      = 0x06 (OUT, command)
+//	aic_load_fw/aicwf_usb.c:
+//	  bulk_in_pipe      = 0x84 (IN)
+//	  bulk_out_pipe     = 0x04 (OUT)
+//	  msg_out_pipe      = 0x06 (OUT, command)
 //
 // Bulk OUT (0x04) carries data and the 8-byte-prefixed command messages.
 // Bulk IN  (0x84) carries command confirms.
