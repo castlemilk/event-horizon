@@ -408,7 +408,7 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			}
 		}
 		if !found {
-			return fmt.Errorf("chip reboot: device did not re-enumerate within 10s — power-cycle required: unplug the dongle (and its hub) for ~5s, then plug it directly into the Mac")
+			return fmt.Errorf("chip reboot: device did not re-enumerate within 10s — a TRUE power-cycle is required. The chip enumerates but its command processor is wedged, which a USB reset cannot clear. If the dongle is behind a SELF-POWERED hub, replugging the dongle into that hub will NOT drop its power — instead unplug the HUB itself from the Mac (or cut the hub's power) for ~5s, which drops VBUS to every downstream port. A USB-A dongle that cannot go direct must be reset this way.")
 		}
 		log.Printf("[AIC] chip rebooted — re-enumerated as %04x:%04x", saw[0], saw[1])
 		if saw[1] == protocol.PID_AIC8800D80_Storage {
@@ -428,7 +428,7 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	}
 
 	if !calibrated {
-		return fmt.Errorf("read system config: device did not answer DBG_MEM_READ even after port reset and chip reboot — power-cycle required: unplug the dongle (and the hub it sits on) for ~5s, then plug it directly into the Mac")
+		return fmt.Errorf("read system config: device did not answer DBG_MEM_READ even after port reset, halt-clear and chip reboot. The BootROM enumerates but its command processor is not accepting transfers — only a true VBUS drop recovers it. Behind a self-powered hub, replugging the dongle does not cut its power: unplug the HUB from the Mac (or power-cycle the hub) for ~5s so VBUS drops to all its ports, then let the dongle re-enumerate.")
 	}
 	res.ChipRev = chipID
 	res.ChipMCUID = chipMCUID
