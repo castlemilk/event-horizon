@@ -15,9 +15,12 @@ type Dispatch struct {
 	OnScanStartCfm func(lmac.ScanStartCfm)
 	OnScanDone     func()
 	OnVersion      func(lmac.VersionCfm)
-	OnStartCfm    func()
-	OnAddIfCfm    func(lmac.AddIfCfm)
-	OnResetCfm    func()
+	OnStartCfm     func()
+	OnAddIfCfm     func(lmac.AddIfCfm)
+	OnResetCfm     func()
+	OnMacAddr      func(lmac.MacAddrCfm)
+	OnConnectCfm   func(status uint8)
+	OnConnectInd   func(lmac.ConnectInd)
 	OnAnyUnknown   func(msgID uint16, payload []byte)
 }
 
@@ -107,6 +110,33 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 		if d.OnResetCfm != nil {
 			d.OnResetCfm()
 		}
+		return nil
+	case lmac.MMGetMacAddrCfm:
+		if d.OnMacAddr == nil {
+			return nil
+		}
+		var c lmac.MacAddrCfm
+		if err := c.Decode(payload); err != nil {
+			log.Printf("[dispatch] mac addr cfm decode: %v", err)
+			return nil
+		}
+		d.OnMacAddr(c)
+		return nil
+	case lmac.SMConnectCfm:
+		if d.OnConnectCfm != nil && len(payload) >= 1 {
+			d.OnConnectCfm(payload[0])
+		}
+		return nil
+	case lmac.SMConnectInd:
+		if d.OnConnectInd == nil {
+			return nil
+		}
+		var ind lmac.ConnectInd
+		if err := ind.Decode(payload); err != nil {
+			log.Printf("[dispatch] connect ind decode: %v", err)
+			return nil
+		}
+		d.OnConnectInd(ind)
 		return nil
 	default:
 		if d.OnAnyUnknown != nil {

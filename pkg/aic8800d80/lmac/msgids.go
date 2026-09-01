@@ -39,6 +39,28 @@ const (
 	MMAddIfCfm   uint16 = 0x0007
 	MMSetCoexReq uint16 = 0x0067 // MM_SET_COEX_REQ (ordinal 103 in mm_msg_tag)
 	MMSetCoexCfm uint16 = 0x0068
+	// RF-calibration / stack-start sequence (all TASK_MM). Ordinals verified
+	// against the reference mm_msg_tag enum.
+	MMSetRFCalibReq     uint16 = 0x0069
+	MMSetRFCalibCfm     uint16 = 0x006A
+	MMGetMacAddrReq     uint16 = 0x0073
+	MMGetMacAddrCfm     uint16 = 0x0074
+	MMSetTxpwrIdxLvlReq uint16 = 0x0077
+	MMSetTxpwrIdxLvlCfm uint16 = 0x0078
+	MMSetStackStartReq  uint16 = 0x007B
+	MMSetStackStartCfm  uint16 = 0x007C
+	MMGetFwVersionReq   uint16 = 0x0080
+	MMGetFwVersionCfm   uint16 = 0x0081
+)
+
+// SM (station management) task messages (TASK_SM = 6).
+const (
+	SMConnectReq    uint16 = 0x1800
+	SMConnectCfm    uint16 = 0x1801
+	SMConnectInd    uint16 = 0x1802
+	SMDisconnectReq uint16 = 0x1803
+	SMDisconnectCfm uint16 = 0x1804
+	SMDisconnectInd uint16 = 0x1805
 )
 
 // DBG task messages (TASK_DBG = 1). The host uses DBG_MEM_* during the boot

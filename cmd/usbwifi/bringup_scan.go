@@ -32,6 +32,8 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	band := fs.String("band", "2g", "band: 2g or 5g")
 	duration := fs.Duration("scan-duration", 6*time.Second, "scan dwell time")
 	stepTimeout := fs.Duration("timeout", 4*time.Second, "per-step CFM timeout")
+	rf := fs.Bool("rf", false, "send the reference RF/stack-start sequence (set_stack_start, rf_calib, "+
+		"get_macaddr) before the MAC init — WEDGES the Amlogic fmacfw bundle, for other variants only")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
@@ -44,6 +46,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	vifCh := make(chan lmac.AddIfCfm, 4)
 	startCfmCh := make(chan lmac.ScanStartCfm, 4)
 	doneCh := make(chan struct{}, 1)
+	macCh := make(chan [6]byte, 4)
 
 	d := &event.Dispatch{
 		OnResetCfm: func() { fmt.Println("  MM_RESET_CFM ok") },
@@ -54,6 +57,12 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		OnAddIfCfm: func(c lmac.AddIfCfm) {
 			select {
 			case vifCh <- c:
+			default:
+			}
+		},
+		OnMacAddr: func(c lmac.MacAddrCfm) {
+			select {
+			case macCh <- c.MAC:
 			default:
 			}
 		},
@@ -113,16 +122,45 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		}
 		return true
 	}
+	// submitOpt is for messages the reference sends fire-and-forget (NULL cfm):
+	// a missing CFM is not fatal, so warn and continue.
+	submitOpt := func(name string, msg lmac.Builder) {
+		c, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		if err := s.submitter.Submit(c, msg); err != nil {
+			log.Printf("%s (non-fatal): %v", name, err)
+		}
+	}
 
-	// A locally-administered station MAC. The reference driver uses the
-	// device's efuse MAC; a scan does not depend on the address, so a
-	// stable LAA is fine here.
+	// Fallback station MAC if the device does not return one.
 	mac := [6]byte{0x02, 0x11, 0x22, 0x33, 0x44, 0x55}
 
-	// Reference init order (rwnx fullmac): reset -> [version] -> me_chan_config
-	// -> start -> add_if(STA) -> scan. me_chan_config loads the regulatory
-	// channel table the firmware needs before it will honour a scan.
-	fmt.Println("bringing up station interface (reset -> me_config -> chan_config -> start -> add_if)...")
+	// The host-driven RF/stack-start sequence from the reference driver
+	// (MM_SET_STACK_START_REQ 0x7B, MM_SET_RF_CALIB_REQ 0x69,
+	// MM_SET_TXPWR_IDX_LVL_REQ 0x77, MM_GET_MAC_ADDR_REQ 0x73) WEDGES the
+	// Amlogic fmacfw bundle: every request after set_stack_start times out.
+	// That build boots with the stack started and the radio auto-calibrated,
+	// so those host messages hit unhandled paths. Gated behind --rf for other
+	// firmware variants that need it.
+	if *rf {
+		fmt.Println("sending RF/stack-start sequence (--rf)...")
+		if !submit("mm_set_stack_start_req", lmac.StackStartReq{}) {
+			return 1
+		}
+		time.Sleep(2 * time.Second)
+		submitOpt("mm_set_rf_calib_req", lmac.RFCalibReq{})
+		submitOpt("mm_get_mac_addr_req", lmac.GetMacAddrReq{})
+		select {
+		case m := <-macCh:
+			if m != ([6]byte{}) {
+				mac = m
+				fmt.Printf("  device MAC = %02x:%02x:%02x:%02x:%02x:%02x\n", m[0], m[1], m[2], m[3], m[4], m[5])
+			}
+		case <-time.After(*stepTimeout):
+		}
+	}
+
+	fmt.Println("bringing up station interface (reset -> me_config -> chan_config -> start -> coex -> add_if)...")
 	if !submit("mm_reset_req", lmac.ResetReq{}) {
 		return 1
 	}
