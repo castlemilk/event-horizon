@@ -47,6 +47,8 @@ func runCmdCtl(args []string) int {
 		return runCmdListen(ctx, args[1:])
 	case "probe":
 		return runCmdProbe(ctx)
+	case "bringup":
+		return runCmdBringup(ctx, args[1:])
 	case "help", "-h", "--help":
 		usageCmdCtl()
 		return 0
@@ -69,17 +71,10 @@ type session struct {
 	cancel    context.CancelFunc
 }
 
-// openSession opens the operational device and starts the event loop.
-func openSession(ctx context.Context) (*session, error) {
-	dev, err := protocol.OpenOperational(ctx)
-	if err != nil {
-		return nil, err
-	}
-	s := &session{
-		sess:  dev,
-		ackCh: make(chan uint16, 64),
-	}
-	s.dispatch = &event.Dispatch{
+// defaultDispatch is the human-readable dispatch used by interactive
+// send/probe commands. bringup builds its own to capture the vif.
+func defaultDispatch() *event.Dispatch {
+	return &event.Dispatch{
 		OnScanResult: func(r lmac.ScanResultInd) {
 			lock := r.SSID
 			if lock == "" {
@@ -116,6 +111,26 @@ func openSession(ctx context.Context) (*session, error) {
 			log.Printf("unhandled msg id 0x%04x", msgID)
 		},
 	}
+}
+
+// openSession opens the operational device with the default dispatch.
+func openSession(ctx context.Context) (*session, error) {
+	return openSessionWith(ctx, defaultDispatch())
+}
+
+// openSessionWith opens the operational device and starts the event loop
+// with a caller-supplied dispatch (set fully before this call — the loop
+// reads its func fields concurrently).
+func openSessionWith(ctx context.Context, d *event.Dispatch) (*session, error) {
+	dev, err := protocol.OpenOperational(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s := &session{
+		sess:  dev,
+		ackCh: make(chan uint16, 64),
+	}
+	s.dispatch = d
 
 	src := event.NewBulkFrameSource(dev, 200)
 	tee := &ackTeeSource{inner: src, acks: s.ackCh}

@@ -65,27 +65,29 @@ func TestScanStartReqTooManySSIDs(t *testing.T) {
 func TestScanResultIndDecode(t *testing.T) {
 	// Hand-built SCANU_RESULT_IND payload (struct scanu_result_ind):
 	//   u16 length; u16 framectrl; u16 center_freq; u8 band; u8 sta_idx; u8 inst_nbr; s8 rssi; u16 pad;
-	//   mgmt frame (offset 12):
-	//     duration(2), da(6), sa(6), bssid(6), seq(2), ts(8), bcn_int(2), capab(2), ies...
+	// payload[] (offset 12) is the FULL 802.11 management frame — it starts
+	// with its own frame_control, so BSSID (addr3) is at mgmt offset 16 and
+	// the tagged IEs at offset 36.
 	payload := []byte{
-		41, 0x00, // length = 41
-		0x80, 0x00, // framectrl (beacon)
+		43, 0x00, // length = 43 (full mgmt frame incl. frame_control)
+		0x80, 0x00, // framectrl (beacon) — convenience copy in the ind
 		0x8a, 0x09, // center_freq = 2442 (ch 7)
 		0x00,       // band = 0 (2.4G)
 		0xFF,       // sta_idx
 		0x00,       // inst_nbr
 		0xC4,       // rssi = -60
 		0x00, 0x00, // pad
-		// mgmt frame body at offset 12:
-		0x00, 0x00, // duration
-		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // DA
-		0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, // SA
-		0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, // BSSID (offset 14 in mgmt)
-		0x00, 0x00, // seq_ctrl
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // timestamp (8)
-		0x64, 0x00, // beacon_int (2)
-		0x01, 0x00, // capab (2)
-		// IEs (offset 34 in mgmt):
+		// mgmt frame body at offset 12 (full ieee80211_mgmt):
+		0x80, 0x00, // frame_control (mgmt offset 0)
+		0x00, 0x00, // duration (mgmt offset 2)
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // addr1/DA (mgmt offset 4)
+		0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, // addr2/SA (mgmt offset 10)
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66, // addr3/BSSID (mgmt offset 16)
+		0x00, 0x00, // seq_ctrl (mgmt offset 22)
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // timestamp (mgmt offset 24)
+		0x64, 0x00, // beacon_int (mgmt offset 32)
+		0x01, 0x00, // capab (mgmt offset 34)
+		// IEs (mgmt offset 36):
 		0x00, 0x05, 'h', 'e', 'l', 'l', 'o', // Tag 0: SSID "hello"
 	}
 	var res ScanResultInd
@@ -98,7 +100,7 @@ func TestScanResultIndDecode(t *testing.T) {
 	if res.RSSI != -60 {
 		t.Errorf("rssi: %d", res.RSSI)
 	}
-	if res.BSSID != ([6]byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}) {
+	if res.BSSID != ([6]byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66}) {
 		t.Errorf("bssid: %v", res.BSSID)
 	}
 	if res.SSID != "hello" {

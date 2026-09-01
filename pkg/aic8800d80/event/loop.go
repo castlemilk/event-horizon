@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/protocol"
 )
 
@@ -41,12 +40,14 @@ func (l *Loop) Run(ctx context.Context) error {
 			}
 			continue
 		}
-		if len(f.Payload) < lmac.HeaderSize {
+		if len(f.Payload) < protocol.E2AMsgHeaderSize {
 			log.Printf("[event] short config frame (%d bytes), dropping", len(f.Payload))
 			continue
 		}
 		msgID := f.MsgID()
-		param := f.Payload[lmac.HeaderSize:]
+		// RX param starts after the 12-byte ipc_e2a_msg header (which
+		// includes the u32 `pattern` word), not the 8-byte TX header.
+		param := f.Param()
 		if err := l.sink.Handle(ctx, msgID, param); err != nil {
 			if _, ok := err.(*Fatal); ok {
 				return fmt.Errorf("event loop fatal: %w", err)

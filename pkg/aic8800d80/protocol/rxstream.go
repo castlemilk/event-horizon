@@ -14,10 +14,21 @@ const (
 	rxAlignment      = 4  // RX_ALIGNMENT
 )
 
+// E2AMsgHeaderSize is the byte length of the RX ipc_e2a_msg header that
+// precedes the param[] payload on config frames:
+//
+//	u16 id; u16 dummy_dest_id; u16 dummy_src_id; u16 param_len; u32 pattern;
+//
+// It is 12 bytes — 4 more than the 8-byte TX lmac_msg header, because the
+// firmware stamps an extra u32 `pattern` word before the parameters. Reading
+// the payload at the 8-byte TX offset lands in `pattern` (a fixed magic),
+// which desynchronises every CFM/IND decode by 4 bytes.
+const E2AMsgHeaderSize = 12
+
 // RxFrame is one extracted frame from the bulk IN stream.
 type RxFrame struct {
 	Type    uint8  // raw type byte (buf[2])
-	Payload []byte // bytes after the 4-byte record header
+	Payload []byte // bytes after the 4-byte record header (the ipc_e2a_msg)
 }
 
 // IsConfig reports whether the frame is a config/command frame.
@@ -30,6 +41,24 @@ func (f RxFrame) MsgID() uint16 {
 		return 0
 	}
 	return binary.LittleEndian.Uint16(f.Payload[0:2])
+}
+
+// Param returns the message parameters — the bytes after the 12-byte
+// ipc_e2a_msg header. Returns nil if the frame is too short to contain a
+// header.
+func (f RxFrame) Param() []byte {
+	if len(f.Payload) < E2AMsgHeaderSize {
+		return nil
+	}
+	return f.Payload[E2AMsgHeaderSize:]
+}
+
+// ParamLen returns the firmware-declared parameter length (payload[6:8]).
+func (f RxFrame) ParamLen() uint16 {
+	if len(f.Payload) < 8 {
+		return 0
+	}
+	return binary.LittleEndian.Uint16(f.Payload[6:8])
 }
 
 // RxStream reassembles length-prefixed frames from arbitrary bulk IN

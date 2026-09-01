@@ -11,10 +11,12 @@ const (
 	TaskSCAN  uint8 = 2
 	TaskTDLS  uint8 = 3
 	TaskSCANU uint8 = 4
-	TaskME    uint8 = 6
-	TaskSM    uint8 = 7
-	TaskAPM   uint8 = 8
-	TaskBAM   uint8 = 9
+	TaskME    uint8 = 5
+	TaskSM    uint8 = 6
+	TaskAPM   uint8 = 7
+	TaskBAM   uint8 = 8
+	TaskMESH  uint8 = 9
+	TaskRXU   uint8 = 10
 	TaskLast  uint8 = 11 // TASK_RM
 	TaskAPI   uint8 = 12
 	TaskMax   uint8 = 13
@@ -35,6 +37,8 @@ const (
 	MMVersionCfm uint16 = 0x0005
 	MMAddIfReq   uint16 = 0x0006
 	MMAddIfCfm   uint16 = 0x0007
+	MMSetCoexReq uint16 = 0x0067 // MM_SET_COEX_REQ (ordinal 103 in mm_msg_tag)
+	MMSetCoexCfm uint16 = 0x0068
 )
 
 // DBG task messages (TASK_DBG = 1). The host uses DBG_MEM_* during the boot
@@ -61,6 +65,15 @@ const (
 	SCANDoneInd   uint16 = 0x0802
 	SCANCancelReq uint16 = 0x0803
 	SCANCancelCfm uint16 = 0x0804
+)
+
+// ME task messages (TASK_ME = 6). ME carries the host-side MAC engine
+// configuration the firmware needs before a station can scan or connect.
+const (
+	MEConfigReq     uint16 = 0x1400
+	MEConfigCfm     uint16 = 0x1401
+	MEChanConfigReq uint16 = 0x1402
+	MEChanConfigCfm uint16 = 0x1403
 )
 
 // SCANU task messages (TASK_SCANU = 4). SCANU is the user-space-initiated
