@@ -912,11 +912,15 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			protocol.VID_AIC8800D80_OpWiFi, protocol.PID_AIC8800D80_OpWiFi,
 			2*time.Second, 250*time.Millisecond)
 		if altErr != nil {
-			// Diagnose the failure mode: a firmware crash usually resets
-			// the chip back to BootROM (fast iteration possible); a
-			// totally silent device needs a power cycle.
+			// Diagnose the failure mode. A firmware crash re-enumerates as
+			// BootROM (0x8d80), but on the Pandora clone that ROM comes back
+			// DEAD: it answers EP0/enumeration yet its command processor no
+			// longer accepts DBG transfers (verified 2026-09-01 — a --probe
+			// right after a crash reads 0x40500000 as UNREADABLE). Only a
+			// true VBUS drop recovers it, so a re-upload without a physical
+			// replug will fail. Recover with scripts/aic-zerocd-eject.sh.
 			if _, boErr := protocol.OpenByVIDPID(c, protocol.VID_AIC8800D80_BootROM, protocol.PID_AIC8800D80_BootROM); boErr == nil {
-				log.Printf("[AIC] firmware did not boot — device is back in boot ROM (crash/reset); can re-upload without a power cycle")
+				log.Printf("[AIC] firmware did not boot — device fell back to boot ROM (0x8d80). On this clone that ROM is wedged; unplug the dongle ~10s and re-run (scripts/aic-zerocd-eject.sh drives the whole cycle).")
 				return fmt.Errorf("waiting for operational re-enumeration: firmware crashed back to boot ROM: %w", err)
 			}
 			return fmt.Errorf("waiting for operational re-enumeration: %w (device silent — power-cycle required)", err)

@@ -26,6 +26,8 @@ func main() {
 		switch os.Args[1] {
 		case "aicloader":
 			os.Exit(runAICLoader(os.Args[2:]))
+		case "bootstrap":
+			os.Exit(runBootstrap(os.Args[2:]))
 		case "firmware":
 			os.Exit(runFirmwareCmd(os.Args[2:]))
 		case "driver":
