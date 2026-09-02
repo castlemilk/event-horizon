@@ -34,9 +34,13 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	stepTimeout := fs.Duration("timeout", 4*time.Second, "per-step CFM timeout")
 	rf := fs.Bool("rf", false, "send the reference RF/stack-start sequence (set_stack_start, rf_calib, "+
 		"get_macaddr) before the MAC init — WEDGES the Amlogic fmacfw bundle, for other variants only")
+	connectSSID := fs.String("connect", "", "after bring-up, associate to this SSID via SM_CONNECT (skips scan)")
+	connectChan := fs.Int("connect-channel", 0, "channel of the --connect SSID (0 = any)")
+	connectPass := fs.String("connect-pass", "", "WPA2 passphrase for --connect (empty = open network)")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
+	_ = connectPass // WPA2 key path not yet wired; open networks only for now
 
 	var (
 		mu      sync.Mutex
@@ -47,6 +51,8 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	startCfmCh := make(chan lmac.ScanStartCfm, 4)
 	doneCh := make(chan struct{}, 1)
 	macCh := make(chan [6]byte, 4)
+	connCfmCh := make(chan uint8, 4)
+	connIndCh := make(chan lmac.ConnectInd, 4)
 
 	d := &event.Dispatch{
 		OnResetCfm: func() { fmt.Println("  MM_RESET_CFM ok") },
@@ -63,6 +69,18 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		OnMacAddr: func(c lmac.MacAddrCfm) {
 			select {
 			case macCh <- c.MAC:
+			default:
+			}
+		},
+		OnConnectCfm: func(status uint8) {
+			select {
+			case connCfmCh <- status:
+			default:
+			}
+		},
+		OnConnectInd: func(ind lmac.ConnectInd) {
+			select {
+			case connIndCh <- ind:
 			default:
 			}
 		},
@@ -189,7 +207,52 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		vif = c.InstNbr
 		fmt.Printf("  station vif index = %d\n", vif)
 	case <-time.After(*stepTimeout):
-		fmt.Println("  (no MM_ADD_IF_CFM captured; scanning with vif 0)")
+		fmt.Println("  (no MM_ADD_IF_CFM captured; using vif 0)")
+	}
+
+	// Direct-connect path: SM_CONNECT_REQ carries the SSID/channel itself and
+	// the firmware runs its own connect-time scan, so this does not depend on
+	// the (silent) SCANU path. Open networks only for now.
+	if *connectSSID != "" {
+		creq := &lmac.ConnectReq{
+			SSID:     *connectSSID,
+			Band:     lmac.Band2G,
+			Channel:  uint8(*connectChan),
+			VifIdx:   vif,
+			AuthType: lmac.AuthOpen,
+			Flags:    0,
+		}
+		if *band == "5g" {
+			creq.Band = lmac.Band5G
+		}
+		fmt.Printf("connecting to %q (vif=%d, channel=%d, open) ...\n", *connectSSID, vif, *connectChan)
+		cctx, ccancel := context.WithTimeout(ctx, *stepTimeout)
+		if err := s.submitter.Submit(cctx, creq); err != nil {
+			ccancel()
+			log.Printf("sm_connect_req: %v", err)
+			return 1
+		}
+		ccancel()
+		select {
+		case st := <-connCfmCh:
+			fmt.Printf("  SM_CONNECT_CFM status=%d (0 = accepted, awaiting association)\n", st)
+		case <-time.After(2 * time.Second):
+			fmt.Println("  (no SM_CONNECT_CFM)")
+		}
+		select {
+		case ind := <-connIndCh:
+			if ind.StatusCode == 0 {
+				fmt.Printf("CONNECTED to %q: bssid=%02x:%02x:%02x:%02x:%02x:%02x aid=%d band=%d freq=%d\n",
+					*connectSSID, ind.BSSID[0], ind.BSSID[1], ind.BSSID[2], ind.BSSID[3], ind.BSSID[4], ind.BSSID[5],
+					ind.AID, ind.Band, ind.CenterFreq)
+				return 0
+			}
+			fmt.Printf("association FAILED: status_code=%d\n", ind.StatusCode)
+			return 1
+		case <-time.After(15 * time.Second):
+			fmt.Println("no SM_CONNECT_IND within 15s — association did not complete (radio likely not calibrated on this firmware)")
+			return 1
+		}
 	}
 
 	// Parse channel list.
