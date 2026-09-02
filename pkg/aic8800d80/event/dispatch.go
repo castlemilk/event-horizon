@@ -22,9 +22,15 @@ type Dispatch struct {
 	OnConnectCfm   func(status uint8)
 	OnConnectInd   func(lmac.ConnectInd)
 	OnAnyUnknown   func(msgID uint16, payload []byte)
+	// OnRaw, if set, is called for every frame before typed routing —
+	// msgID 0xFFFF marks a data frame. For raw diagnostics.
+	OnRaw func(msgID uint16, payload []byte)
 }
 
 func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error {
+	if d.OnRaw != nil {
+		d.OnRaw(msgID, payload)
+	}
 	switch msgID {
 	case 0xFFFF:
 		if len(payload) >= 24 {

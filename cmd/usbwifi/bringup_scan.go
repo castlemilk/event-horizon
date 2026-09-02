@@ -37,6 +37,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	connectSSID := fs.String("connect", "", "after bring-up, associate to this SSID via SM_CONNECT (skips scan)")
 	connectChan := fs.Int("connect-channel", 0, "channel of the --connect SSID (0 = any)")
 	connectPass := fs.String("connect-pass", "", "WPA2 passphrase for --connect (empty = open network)")
+	dump := fs.Bool("dump", false, "hex-dump every received frame (raw diagnostics)")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
@@ -83,6 +84,20 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			case connIndCh <- ind:
 			default:
 			}
+		},
+		OnRaw: func(msgID uint16, p []byte) {
+			if !*dump {
+				return
+			}
+			n := len(p)
+			if n > 64 {
+				n = 64
+			}
+			tag := "cfg"
+			if msgID == 0xFFFF {
+				tag = "data"
+			}
+			fmt.Printf("  [raw %s 0x%04x len=%d] % x\n", tag, msgID, len(p), p[:n])
 		},
 		OnScanStartCfm: func(c lmac.ScanStartCfm) {
 			select {
@@ -140,41 +155,38 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		}
 		return true
 	}
-	// submitOpt is for messages the reference sends fire-and-forget (NULL cfm):
-	// a missing CFM is not fatal, so warn and continue.
-	submitOpt := func(name string, msg lmac.Builder) {
-		c, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		if err := s.submitter.Submit(c, msg); err != nil {
-			log.Printf("%s (non-fatal): %v", name, err)
-		}
-	}
 
 	// Fallback station MAC if the device does not return one.
 	mac := [6]byte{0x02, 0x11, 0x22, 0x33, 0x44, 0x55}
 
-	// The host-driven RF/stack-start sequence from the reference driver
-	// (MM_SET_STACK_START_REQ 0x7B, MM_SET_RF_CALIB_REQ 0x69,
-	// MM_SET_TXPWR_IDX_LVL_REQ 0x77, MM_GET_MAC_ADDR_REQ 0x73) WEDGES the
-	// Amlogic fmacfw bundle: every request after set_stack_start times out.
-	// That build boots with the stack started and the radio auto-calibrated,
-	// so those host messages hit unhandled paths. Gated behind --rf for other
-	// firmware variants that need it.
-	if *rf {
-		fmt.Println("sending RF/stack-start sequence (--rf)...")
-		if !submit("mm_set_stack_start_req", lmac.StackStartReq{}) {
-			return 1
+	// RF/stack-start sequence with the CORRECTED message ids. rf_calib (0x006B)
+	// is confirmed working; testing the rest with per-message reporting and
+	// generous timeouts (stack_start starts the whole MAC/PHY, so it can be
+	// slow). submitTimed logs whether the CFM arrived.
+	submitTimed := func(name string, msg lmac.Builder, d time.Duration) {
+		c, cancel := context.WithTimeout(ctx, d)
+		defer cancel()
+		if err := s.submitter.Submit(c, msg); err != nil {
+			fmt.Printf("  %s: NO CFM (%v)\n", name, err)
+		} else {
+			fmt.Printf("  %s: CFM ok\n", name)
 		}
-		time.Sleep(2 * time.Second)
-		submitOpt("mm_set_rf_calib_req", lmac.RFCalibReq{})
-		submitOpt("mm_get_mac_addr_req", lmac.GetMacAddrReq{})
+	}
+	if *rf {
+		fmt.Println("sending RF/stack-start sequence (--rf, corrected ids)...")
+		submitTimed("stack_start 0x007D", lmac.StackStartReq{}, 10*time.Second)
+		submitTimed("txpwr_idx_lvl 0x0079", lmac.TxpwrLvlReq{}, 4*time.Second)
+		submitTimed("rf_calib 0x006B", lmac.RFCalibReq{}, 4*time.Second)
+		submitTimed("get_macaddr 0x0075", lmac.GetMacAddrReq{}, 4*time.Second)
 		select {
 		case m := <-macCh:
 			if m != ([6]byte{}) {
 				mac = m
 				fmt.Printf("  device MAC = %02x:%02x:%02x:%02x:%02x:%02x\n", m[0], m[1], m[2], m[3], m[4], m[5])
+			} else {
+				fmt.Println("  device MAC = 00:00:00:00:00:00 (efuse blank; using LAA)")
 			}
-		case <-time.After(*stepTimeout):
+		case <-time.After(1 * time.Second):
 		}
 	}
 
@@ -226,32 +238,38 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			creq.Band = lmac.Band5G
 		}
 		fmt.Printf("connecting to %q (vif=%d, channel=%d, open) ...\n", *connectSSID, vif, *connectChan)
-		cctx, ccancel := context.WithTimeout(ctx, *stepTimeout)
-		if err := s.submitter.Submit(cctx, creq); err != nil {
-			ccancel()
-			log.Printf("sm_connect_req: %v", err)
+		// Fire-and-forget: this firmware does not reliably send the SM_CONNECT_CFM
+		// ack (just as it skips the scan-start ack), so blocking on the submitter
+		// ack would bail before the real result. Send raw and wait for the async
+		// SM_CONNECT_IND, which is the authoritative association result.
+		frame, err := creq.Encode()
+		if err != nil {
+			log.Printf("encode sm_connect_req: %v", err)
 			return 1
 		}
-		ccancel()
-		select {
-		case st := <-connCfmCh:
-			fmt.Printf("  SM_CONNECT_CFM status=%d (0 = accepted, awaiting association)\n", st)
-		case <-time.After(2 * time.Second):
-			fmt.Println("  (no SM_CONNECT_CFM)")
+		if err := s.sess.BulkOut(ctx, lmac.WrapCommand(frame)); err != nil {
+			log.Printf("send sm_connect_req: %v", err)
+			return 1
 		}
-		select {
-		case ind := <-connIndCh:
-			if ind.StatusCode == 0 {
-				fmt.Printf("CONNECTED to %q: bssid=%02x:%02x:%02x:%02x:%02x:%02x aid=%d band=%d freq=%d\n",
-					*connectSSID, ind.BSSID[0], ind.BSSID[1], ind.BSSID[2], ind.BSSID[3], ind.BSSID[4], ind.BSSID[5],
-					ind.AID, ind.Band, ind.CenterFreq)
-				return 0
+		fmt.Println("  SM_CONNECT_REQ sent; waiting up to 25s for SM_CONNECT_IND ...")
+		deadline := time.After(25 * time.Second)
+		for {
+			select {
+			case st := <-connCfmCh:
+				fmt.Printf("  SM_CONNECT_CFM status=%d (accepted; awaiting association)\n", st)
+			case ind := <-connIndCh:
+				if ind.StatusCode == 0 {
+					fmt.Printf("CONNECTED to %q: bssid=%02x:%02x:%02x:%02x:%02x:%02x aid=%d band=%d freq=%d\n",
+						*connectSSID, ind.BSSID[0], ind.BSSID[1], ind.BSSID[2], ind.BSSID[3], ind.BSSID[4], ind.BSSID[5],
+						ind.AID, ind.Band, ind.CenterFreq)
+					return 0
+				}
+				fmt.Printf("association FAILED: status_code=%d\n", ind.StatusCode)
+				return 1
+			case <-deadline:
+				fmt.Println("no SM_CONNECT_IND within 25s — association did not complete")
+				return 1
 			}
-			fmt.Printf("association FAILED: status_code=%d\n", ind.StatusCode)
-			return 1
-		case <-time.After(15 * time.Second):
-			fmt.Println("no SM_CONNECT_IND within 15s — association did not complete (radio likely not calibrated on this firmware)")
-			return 1
 		}
 	}
 
