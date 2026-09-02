@@ -39,18 +39,28 @@ const (
 	MMAddIfCfm   uint16 = 0x0007
 	MMSetCoexReq uint16 = 0x0067 // MM_SET_COEX_REQ (ordinal 103 in mm_msg_tag)
 	MMSetCoexCfm uint16 = 0x0068
-	// RF-calibration / stack-start sequence (all TASK_MM). Ordinals verified
-	// against the reference mm_msg_tag enum.
-	MMSetRFCalibReq     uint16 = 0x0069
-	MMSetRFCalibCfm     uint16 = 0x006A
-	MMGetMacAddrReq     uint16 = 0x0073
-	MMGetMacAddrCfm     uint16 = 0x0074
-	MMSetTxpwrIdxLvlReq uint16 = 0x0077
-	MMSetTxpwrIdxLvlCfm uint16 = 0x0078
-	MMSetStackStartReq  uint16 = 0x007B
-	MMSetStackStartCfm  uint16 = 0x007C
-	MMGetFwVersionReq   uint16 = 0x0080
-	MMGetFwVersionCfm   uint16 = 0x0081
+	// RF-calibration / stack-start sequence (all TASK_MM). Ordinals counted
+	// directly from the reference mm_msg_tag enum, anchored on the verified
+	// MM_ADD_IF_REQ=6=0x0006. NOTE: an earlier extraction was 2 too low for
+	// every id past coex (it missed the MM_SET_RF_CONFIG req/cfm pair at
+	// ordinals 105/106), which made rf_calib collide with RF_CONFIG (0x0069)
+	// and stack_start with TXPWR_OFST (0x007B) — the cause of the "wedge".
+	MMSetRFConfigReq    uint16 = 0x0069 // ordinal 105 (was mislabelled rf_calib)
+	MMSetRFConfigCfm    uint16 = 0x006A
+	MMSetRFCalibReq     uint16 = 0x006B // ordinal 107
+	MMSetRFCalibCfm     uint16 = 0x006C
+	MMGetMacAddrReq     uint16 = 0x0075 // ordinal 117
+	MMGetMacAddrCfm     uint16 = 0x0076
+	MMSetTxpwrIdxLvlReq uint16 = 0x0079 // ordinal 121
+	MMSetTxpwrIdxLvlCfm uint16 = 0x007A
+	MMSetTxpwrOfstReq   uint16 = 0x007B // ordinal 123
+	MMSetStackStartReq  uint16 = 0x007D // ordinal 125
+	MMSetStackStartCfm  uint16 = 0x007E
+	MMGetFwVersionReq   uint16 = 0x0082 // ordinal 130
+	MMGetFwVersionCfm   uint16 = 0x0083
+	MMKeyAddReq         uint16 = 0x0025 // ordinal 37
+	MMKeyAddCfm         uint16 = 0x0026
+	MMKeyDelReq         uint16 = 0x0027 // ordinal 39
 )
 
 // SM (station management) task messages (TASK_SM = 6).
