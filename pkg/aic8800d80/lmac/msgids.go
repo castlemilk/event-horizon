@@ -54,13 +54,17 @@ const (
 	MMSetTxpwrIdxLvlReq uint16 = 0x0079 // ordinal 121
 	MMSetTxpwrIdxLvlCfm uint16 = 0x007A
 	MMSetTxpwrOfstReq   uint16 = 0x007B // ordinal 123
-	MMSetStackStartReq  uint16 = 0x007D // ordinal 125
-	MMSetStackStartCfm  uint16 = 0x007E
-	MMGetFwVersionReq   uint16 = 0x0082 // ordinal 130
-	MMGetFwVersionCfm   uint16 = 0x0083
-	MMKeyAddReq         uint16 = 0x0025 // ordinal 37
-	MMKeyAddCfm         uint16 = 0x0026
-	MMKeyDelReq         uint16 = 0x0027 // ordinal 39
+	// stack_start responds at 0x007B (is_5g_support=1) but sending it with
+	// is_stack_start=1 WEDGES every subsequent command — this firmware
+	// auto-starts its stack, so a host stack_start double-starts and hangs it.
+	// Point it at the silent 0x007D so the RF sequence (txpwr/rf_calib) runs.
+	MMSetStackStartReq uint16 = 0x007D
+	MMSetStackStartCfm uint16 = 0x007E
+	MMGetFwVersionReq  uint16 = 0x0082 // ordinal 130
+	MMGetFwVersionCfm  uint16 = 0x0083
+	MMKeyAddReq        uint16 = 0x0025 // ordinal 37
+	MMKeyAddCfm        uint16 = 0x0026
+	MMKeyDelReq        uint16 = 0x0027 // ordinal 39
 )
 
 // SM (station management) task messages (TASK_SM = 6).

@@ -183,9 +183,9 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	}
 	if *rf {
 		fmt.Println("sending RF/stack-start sequence (--rf, corrected ids)...")
-		submitTimed("stack_start 0x007D", lmac.StackStartReq{}, 10*time.Second)
+		submitTimed("stack_start 0x007B", lmac.StackStartReq{}, 6*time.Second)
 		submitTimed("txpwr_idx_lvl 0x0079", lmac.TxpwrLvlReq{}, 4*time.Second)
-		submitTimed("rf_calib 0x006B", lmac.RFCalibReq{}, 4*time.Second)
+		submitTimed("rf_calib 0x006B", lmac.RFCalibReq{}, 6*time.Second)
 		submitTimed("get_macaddr 0x0075", lmac.GetMacAddrReq{}, 4*time.Second)
 		select {
 		case m := <-macCh:
