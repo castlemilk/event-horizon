@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"encoding/binary"
 	"log"
 
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
@@ -33,6 +34,36 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 	}
 	switch msgID {
 	case 0xFFFF:
+		// This firmware wraps config responses (SM_CONNECT_CFM/IND) inside a
+		// data-typed frame: [0x11 0x00][id:2][dest:2][src:2][param_len:2]
+		// [pattern:4][param...]. Scan for the SM connect messages and route them.
+		if d.OnConnectCfm != nil || d.OnConnectInd != nil {
+			for i := 0; i+14 <= len(payload); i++ {
+				if payload[i] != 0x11 || payload[i+1] != 0x00 {
+					continue
+				}
+				id := binary.LittleEndian.Uint16(payload[i+2 : i+4])
+				plen := int(binary.LittleEndian.Uint16(payload[i+8 : i+10]))
+				paramOff := i + 14
+				switch id {
+				case lmac.SMConnectCfm:
+					if d.OnConnectCfm != nil && paramOff < len(payload) {
+						d.OnConnectCfm(payload[paramOff])
+					}
+				case lmac.SMConnectInd:
+					if d.OnConnectInd != nil {
+						end := paramOff + plen
+						if end > len(payload) {
+							end = len(payload)
+						}
+						var ind lmac.ConnectInd
+						if err := ind.Decode(payload[paramOff:end]); err == nil {
+							d.OnConnectInd(ind)
+						}
+					}
+				}
+			}
+		}
 		if len(payload) >= 24 {
 			rssi := int8(-50)
 			if len(payload) > 11 {

@@ -89,15 +89,24 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			if !*dump {
 				return
 			}
-			n := len(p)
-			if n > 64 {
-				n = 64
+			// Skip the empty 60-byte RX-buffer data frames (pure noise).
+			if msgID == 0xFFFF {
+				allZero := true
+				for _, b := range p {
+					if b != 0 {
+						allZero = false
+						break
+					}
+				}
+				if allZero {
+					return
+				}
 			}
 			tag := "cfg"
 			if msgID == 0xFFFF {
 				tag = "data"
 			}
-			fmt.Printf("  [raw %s 0x%04x len=%d] % x\n", tag, msgID, len(p), p[:n])
+			fmt.Printf("  [raw %s 0x%04x len=%d] % x\n", tag, msgID, len(p), p)
 		},
 		OnScanStartCfm: func(c lmac.ScanStartCfm) {
 			select {
