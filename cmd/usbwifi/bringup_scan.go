@@ -38,10 +38,10 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	connectChan := fs.Int("connect-channel", 0, "channel of the --connect SSID (0 = any)")
 	connectPass := fs.String("connect-pass", "", "WPA2 passphrase for --connect (empty = open network)")
 	dump := fs.Bool("dump", false, "hex-dump every received frame (raw diagnostics)")
+	prescan := fs.Bool("prescan", false, "issue a scan before --connect to populate the BSS list")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
-	_ = connectPass // WPA2 key path not yet wired; open networks only for now
 
 	var (
 		mu      sync.Mutex
@@ -231,15 +231,26 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			Band:     lmac.Band2G,
 			Channel:  uint8(*connectChan),
 			VifIdx:   vif,
-			AuthType: lmac.AuthOpen,
+			AuthType: lmac.AuthOpen, // WPA2 uses open 802.11 auth, then EAPOL
 			Flags:    0,
 		}
 		if *band == "5g" {
 			creq.Band = lmac.Band5G
 		}
+		wpa2 := *connectPass != ""
+		if wpa2 {
+			// WPA2-PSK: advertise the RSN IE and mark the controlled port as
+			// host-driven. Association (status=0) completes on this alone; the
+			// 4-way handshake + MM_KEY_ADD follow to open the data path.
+			creq.Flags = lmac.ConnWPAWPA2InUse | lmac.ConnCtrlPortHost
+			creq.IE = lmac.WPA2PSKCCMPRsnIE
+			fmt.Println("  WPA2 mode: RSN IE + control-port-host flags set")
+		}
 		// Scan first to populate the firmware's BSS list (the reference flow is
 		// scan -> connect; a cold connect may not find the AP). Fire-and-forget.
-		{
+		// Opt-in: on this firmware a preceding scan sometimes suppresses the
+		// SM_CONNECT response, so it is off by default.
+		if *prescan {
 			sreq := &lmac.ScanStartReq{Band: lmac.Band2G, BSSID: lmac.BroadcastBSSID, VifIdx: vif}
 			if *connectChan != 0 {
 				sreq.Channels = []lmac.ChannelInfo{{Prim20Ch: uint8(*connectChan), Center1: uint8(*connectChan), Width: lmac.ChanWidth20}}

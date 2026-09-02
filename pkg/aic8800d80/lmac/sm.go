@@ -23,6 +23,22 @@ const (
 	ConnReassoc       uint32 = 1 << 5
 )
 
+// WPA2PSKCCMPRsnIE is the standard RSN information element a station puts in
+// its (re)association request for WPA2-Personal with CCMP (AES): version 1,
+// group=CCMP, 1 pairwise=CCMP, 1 AKM=PSK, no RSN capabilities. The AP
+// associates the station on the strength of this IE; the PTK/GTK are then
+// negotiated by the EAPOL 4-way handshake over the controlled port.
+var WPA2PSKCCMPRsnIE = []byte{
+	0x30, 0x14, // RSN element id, length 20
+	0x01, 0x00, // version 1
+	0x00, 0x0f, 0xac, 0x04, // group cipher CCMP
+	0x01, 0x00, // pairwise count 1
+	0x00, 0x0f, 0xac, 0x04, // pairwise CCMP
+	0x01, 0x00, // AKM count 1
+	0x00, 0x0f, 0xac, 0x02, // AKM PSK
+	0x00, 0x00, // RSN capabilities
+}
+
 // ConnectReq is SM_CONNECT_REQ (struct sm_connect_req, 320 bytes):
 //
 //	mac_ssid ssid@0(33); pad@33; mac_addr bssid@34(6); mac_chan_def chan@40(6);
