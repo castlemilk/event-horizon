@@ -237,6 +237,24 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		if *band == "5g" {
 			creq.Band = lmac.Band5G
 		}
+		// Scan first to populate the firmware's BSS list (the reference flow is
+		// scan -> connect; a cold connect may not find the AP). Fire-and-forget.
+		{
+			sreq := &lmac.ScanStartReq{Band: lmac.Band2G, BSSID: lmac.BroadcastBSSID, VifIdx: vif}
+			if *connectChan != 0 {
+				sreq.Channels = []lmac.ChannelInfo{{Prim20Ch: uint8(*connectChan), Center1: uint8(*connectChan), Width: lmac.ChanWidth20}}
+			} else {
+				for _, ch := range []uint8{1, 6, 11} {
+					sreq.Channels = append(sreq.Channels, lmac.ChannelInfo{Prim20Ch: ch, Center1: ch, Width: lmac.ChanWidth20})
+				}
+			}
+			if sf, err := sreq.Encode(); err == nil {
+				_ = s.sess.BulkOut(ctx, lmac.WrapCommand(sf))
+				fmt.Println("  pre-connect scan issued; settling 6s...")
+				time.Sleep(6 * time.Second)
+			}
+		}
+
 		fmt.Printf("connecting to %q (vif=%d, channel=%d, open) ...\n", *connectSSID, vif, *connectChan)
 		// Fire-and-forget: this firmware does not reliably send the SM_CONNECT_CFM
 		// ack (just as it skips the scan-start ack), so blocking on the submitter
