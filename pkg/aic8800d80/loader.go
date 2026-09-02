@@ -616,6 +616,16 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			zones = []protocol.SkipZone{{Start: wall, End: 0xFFFFFFFF}}
 			log.Printf("[AIC] REGISTER-WINDOW SKIP MODE: loading only the %d bytes below 0x%x (boot feasibility experiment)",
 				int(wall)-int(ramFMACFW), wall)
+		case os.Getenv("AIC_FULL") != "":
+			// FULL MODE: write the ENTIRE image with NO zone skipping, in 16B
+			// chunks. If this is genuine hardware with real RAM past the wall
+			// (not a clone's MMIO), every write lands and the full firmware
+			// boots hole-free with a working rf_calib. If the writes wedge, the
+			// wall is real on this unit.
+			zones = []protocol.SkipZone{}
+			chunk = protocol.CloneSmallChunk
+			wordMode = false
+			log.Printf("[AIC] FULL MODE: 16B chunks, NO zone skip — full-image genuine-RAM test past 0x%x", wall)
 		default:
 			zones = protocol.CloneRegZones()
 			chunk = protocol.CloneSmallChunk

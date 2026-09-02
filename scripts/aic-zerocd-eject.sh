@@ -19,6 +19,8 @@ set -u
 BIN="$(cd "$(dirname "$0")/.." && pwd)/bin/usbwifi"
 FWDIR="${1:-$HOME/.event-horizon/firmware/aic8800D80}"
 FWNAME="${2:-}"
+# Third arg "full" enables the no-zone-skip full-image write (genuine-RAM test).
+[ "${3:-}" = "full" ] && export AIC_FULL=1 && echo "[recover] AIC_FULL=1 (no zone skip)"
 # When run under sudo, $HOME is root's; prefer the invoking user's firmware dir.
 if [ -n "${SUDO_USER:-}" ] && [ ! -d "$FWDIR" ]; then
   FWDIR="/Users/$SUDO_USER/.event-horizon/firmware/aic8800D80"
