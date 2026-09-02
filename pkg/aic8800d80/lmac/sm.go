@@ -36,7 +36,8 @@ var WPA2PSKCCMPRsnIE = []byte{
 	0x00, 0x0f, 0xac, 0x04, // pairwise CCMP
 	0x01, 0x00, // AKM count 1
 	0x00, 0x0f, 0xac, 0x02, // AKM PSK
-	0x00, 0x00, // RSN capabilities
+	0x80, 0x00, // RSN capabilities: MFPC (PMF-capable) — many modern APs
+	// reject a WPA2 assoc without this with status=1.
 }
 
 // ConnectReq is SM_CONNECT_REQ (struct sm_connect_req, 320 bytes):
