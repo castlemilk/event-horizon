@@ -203,15 +203,45 @@ func (r *ScanStartReq) Decode(payload []byte) error {
 // ScanResultInd mirrors struct scan_result (lmac_msg.h). The firmware sends
 // one of these per BSS seen during a scan.
 type ScanResultInd struct {
-	Channel uint16 // channel number
-	Band    uint8  // 0 = 2G, 1 = 5G
-	Width   uint8  // channel width
-	RSSI    int8   // signal strength (signed)
-	RSSIMin int8
-	RSSIMax int8
-	BSSID   [6]byte
-	IE      []byte // information elements (raw 802.11 IE bytes)
-	SSID    string
+	Channel  uint16 // channel number
+	Band     uint8  // 0 = 2G, 1 = 5G
+	Width    uint8  // channel width
+	RSSI     int8   // signal strength (signed)
+	RSSIMin  int8
+	RSSIMax  int8
+	BSSID    [6]byte
+	IE       []byte // information elements (raw 802.11 IE bytes)
+	SSID     string
+	Security string // "open"/"wep"/"wpa"/"wpa2" (from beacon IEs)
+}
+
+// ClassifySecurity inspects a beacon/probe-resp tagged-IE blob plus the
+// capability Privacy bit and classifies the network's security.
+func ClassifySecurity(ies []byte, capabilities uint16) string {
+	hasRSN, hasWPA := false, false
+	for off := 0; off+2 <= len(ies); {
+		eid, elen := ies[off], int(ies[off+1])
+		if off+2+elen > len(ies) {
+			break
+		}
+		body := ies[off+2 : off+2+elen]
+		if eid == 48 {
+			hasRSN = true
+		} else if eid == 221 && len(body) >= 4 && body[0] == 0x00 && body[1] == 0x50 && body[2] == 0xf2 && body[3] == 0x01 {
+			hasWPA = true
+		}
+		off += 2 + elen
+	}
+	switch {
+	case hasRSN:
+		return "wpa2"
+	case hasWPA:
+		return "wpa"
+	case capabilities&0x0010 != 0:
+		return "wep"
+	default:
+		return "open"
+	}
 }
 
 func (r *ScanResultInd) Decode(payload []byte) error {

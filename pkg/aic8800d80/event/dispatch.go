@@ -6,7 +6,6 @@ import (
 	"log"
 
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
-	"github.com/castlemilk/event-horizon/pkg/wifi"
 )
 
 // Dispatch is the default Sink: routes known msg ids to typed decoders.
@@ -45,13 +44,16 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 				id := binary.LittleEndian.Uint16(payload[i+2 : i+4])
 				plen := int(binary.LittleEndian.Uint16(payload[i+8 : i+10]))
 				paramOff := i + 14
+				// Validate before trusting: the id must be one we expect and
+				// its param_len must match the struct size, so a stray [11 00]
+				// in noise can't manufacture a spurious status_code.
 				switch id {
 				case lmac.SMConnectCfm:
-					if d.OnConnectCfm != nil && paramOff < len(payload) {
+					if plen == 1 && d.OnConnectCfm != nil && paramOff < len(payload) {
 						d.OnConnectCfm(payload[paramOff])
 					}
 				case lmac.SMConnectInd:
-					if d.OnConnectInd != nil {
+					if plen == 852 && d.OnConnectInd != nil {
 						end := paramOff + plen
 						if end > len(payload) {
 							end = len(payload)
@@ -64,27 +66,15 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 				}
 			}
 		}
-		if len(payload) >= 24 {
-			rssi := int8(-50)
-			if len(payload) > 11 {
-				rssi = int8(payload[11])
-			}
-			// Search for 802.11 beacon (0x80 0x00) or probe response (0x50 0x00)
-			for i := 0; i+24 <= len(payload); i++ {
-				if (payload[i] == 0x80 || payload[i] == 0x50) && payload[i+1] == 0x00 {
-					if frame, err := wifi.ParseFrame(payload[i:], rssi); err == nil {
-						if ap, err := frame.ParseBeacon(); err == nil && d.OnScanResult != nil {
-							var bssid [6]byte
-							copy(bssid[:], frame.Address3[:])
-							d.OnScanResult(lmac.ScanResultInd{
-								SSID:    ap.SSID,
-								BSSID:   bssid,
-								Channel: uint16(ap.Channel),
-								RSSI:    ap.RSSI,
-							})
-							break
-						}
-					}
+		if d.OnScanResult != nil {
+			// This firmware delivers scan beacons as data frames. The 802.11
+			// MPDU sits at a fixed offset after the ~56-byte hw_rxhdr (record
+			// offset 60 -> payload offset 56). Fall back to a search if the
+			// fixed offset doesn't hold.
+			for _, base := range beaconMPDUOffsets(payload) {
+				if r, ok := decodeBeacon(payload[base:]); ok {
+					d.OnScanResult(r)
+					break
 				}
 			}
 		}
@@ -181,4 +171,62 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 		}
 		return nil
 	}
+}
+
+// beaconMPDUOffsets returns candidate offsets in a data-frame payload where an
+// 802.11 beacon/probe-resp MPDU may begin: the fixed hw_rxhdr offset (record
+// offset 60 -> payload offset 56) first, then any frame-control match as a
+// fallback for firmware whose header length differs.
+func beaconMPDUOffsets(payload []byte) []int {
+	offs := []int{}
+	if len(payload) > 56 {
+		offs = append(offs, 56)
+	}
+	for i := 0; i+38 <= len(payload); i++ {
+		if (payload[i] == 0x80 || payload[i] == 0x50) && payload[i+1] == 0x00 {
+			offs = append(offs, i)
+		}
+	}
+	return offs
+}
+
+// decodeBeacon parses an 802.11 beacon (fc 0x80) / probe-resp (fc 0x50) MPDU at
+// mpdu[0]: BSSID (addr3) at +16, capability at +34, tagged IEs at +36. Returns
+// ok=false if the bytes are not a plausible beacon (validated by fc + a leading
+// SSID element), so a wrong offset is rejected rather than yielding garbage.
+func decodeBeacon(mpdu []byte) (lmac.ScanResultInd, bool) {
+	if len(mpdu) < 38 {
+		return lmac.ScanResultInd{}, false
+	}
+	if mpdu[0] != 0x80 && mpdu[0] != 0x50 {
+		return lmac.ScanResultInd{}, false
+	}
+	ies := mpdu[36:]
+	// A real beacon's tagged IEs start with the SSID element (EID 0); require
+	// it so a coincidental fc match at a wrong offset is rejected.
+	if len(ies) < 2 || ies[0] != 0 || int(ies[1]) > 32 || 2+int(ies[1]) > len(ies) {
+		return lmac.ScanResultInd{}, false
+	}
+	var r lmac.ScanResultInd
+	copy(r.BSSID[:], mpdu[16:22])
+	capab := binary.LittleEndian.Uint16(mpdu[34:36])
+	r.IE = append([]byte(nil), ies...)
+	for off := 0; off+2 <= len(ies); {
+		eid, elen := ies[off], int(ies[off+1])
+		if off+2+elen > len(ies) {
+			break
+		}
+		b := ies[off+2 : off+2+elen]
+		switch eid {
+		case 0:
+			r.SSID = string(b)
+		case 3:
+			if len(b) >= 1 {
+				r.Channel = uint16(b[0])
+			}
+		}
+		off += 2 + elen
+	}
+	r.Security = lmac.ClassifySecurity(ies, capab)
+	return r, true
 }

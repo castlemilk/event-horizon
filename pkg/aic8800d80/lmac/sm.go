@@ -93,7 +93,11 @@ func (r *ConnectReq) Encode() ([]byte, error) {
 	// p[45] pad
 
 	binary.LittleEndian.PutUint32(p[48:52], r.Flags)
-	binary.LittleEndian.PutUint16(p[52:54], 0x888e) // ctrl_port_ethertype = EAPOL
+	// ctrl_port_ethertype must be EAPOL 0x888E in wire (big-endian) byte order,
+	// i.e. bytes 88 8e — that is the value 0x8e88 written little-endian. The
+	// firmware compares against 0x8e88 (rwnx_tx.c). Writing 0x888e LE emits
+	// 8e 88 (backwards) and EAPOL is not recognised as control-port traffic.
+	binary.LittleEndian.PutUint16(p[52:54], 0x8e88) // ctrl_port_ethertype = EAPOL (wire 88 8e)
 	binary.LittleEndian.PutUint16(p[54:56], uint16(len(r.IE)))
 	binary.LittleEndian.PutUint16(p[56:58], 0) // listen_interval
 	p[58] = 0                                  // dont_wait_bcmc
