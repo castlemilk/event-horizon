@@ -53,13 +53,17 @@ const (
 	MMGetMacAddrCfm     uint16 = 0x0076
 	MMSetTxpwrIdxLvlReq uint16 = 0x0079 // ordinal 121
 	MMSetTxpwrIdxLvlCfm uint16 = 0x007A
-	MMSetTxpwrOfstReq   uint16 = 0x007B // ordinal 123
-	// stack_start responds at 0x007B (is_5g_support=1) but sending it with
-	// is_stack_start=1 WEDGES every subsequent command — this firmware
-	// auto-starts its stack, so a host stack_start double-starts and hangs it.
-	// Point it at the silent 0x007D so the RF sequence (txpwr/rf_calib) runs.
-	MMSetStackStartReq uint16 = 0x007D
-	MMSetStackStartCfm uint16 = 0x007E
+	MMSetTxpwrOfstReq   uint16 = 0x007B // ordinal 123 in the reference
+	// stack_start is at 0x007B on THIS firmware (it omits the txpwr_ofst pair,
+	// shifting stack_start down from the reference 0x007D): verified on
+	// hardware — 0x007B returns a 2-byte CFM 01 00 (is_5g_support=1,
+	// vendor_info=0), the mm_set_stack_start_cfm shape, while 0x007D is silent.
+	// Both vendor drivers send this FIRST; the firmware gates the radio on
+	// is_stack_start=1, so it is MANDATORY. The apparent "wedge" after it is
+	// the firmware routing later responses to the second (command) IN
+	// endpoint, which the RX loop now drains.
+	MMSetStackStartReq uint16 = 0x007B
+	MMSetStackStartCfm uint16 = 0x007C
 	MMGetFwVersionReq  uint16 = 0x0082 // ordinal 130
 	MMGetFwVersionCfm  uint16 = 0x0083
 	MMKeyAddReq        uint16 = 0x0025 // ordinal 37

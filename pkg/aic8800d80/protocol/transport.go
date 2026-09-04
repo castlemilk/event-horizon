@@ -298,6 +298,20 @@ func (d *USBDevice) BulkIn(buf []byte, timeoutMs int) (int, error) {
 	return d.BulkRecv(d.bulkIn, buf, timeoutMs)
 }
 
+// HasMsgIn reports whether the device exposes a dedicated command IN endpoint.
+func (d *USBDevice) HasMsgIn() bool { return d.msgIn != 0 }
+
+// MsgIn reads one chunk from the dedicated command IN endpoint (second bulk
+// IN). The firmware routes some command/data confirmations here — notably
+// after MM_SET_STACK_START starts the MAC stack — so it must be drained
+// alongside the main bulk IN endpoint. Returns (0, nil) if absent.
+func (d *USBDevice) MsgIn(buf []byte, timeoutMs int) (int, error) {
+	if d.msgIn == 0 {
+		return 0, nil
+	}
+	return d.BulkRecv(d.msgIn, buf, timeoutMs)
+}
+
 // DumpConfig returns a human-readable summary of every interface and
 // endpoint in the device's active configuration.
 func (d *USBDevice) DumpConfig() (string, error) {

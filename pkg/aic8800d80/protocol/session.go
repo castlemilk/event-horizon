@@ -75,6 +75,21 @@ func (s *Session) BulkIn(buf []byte, timeoutMs int) (int, error) {
 	return s.dev.BulkRecv(s.dev.BulkInEndpoint(), buf, timeoutMs)
 }
 
+// HasMsgIn reports whether the device exposes a second (command) IN endpoint.
+func (s *Session) HasMsgIn() bool {
+	return s != nil && s.dev != nil && s.dev.HasMsgIn()
+}
+
+// MsgIn reads one chunk from the dedicated command IN endpoint. The firmware
+// routes some responses there (notably after MM_SET_STACK_START), so it is
+// drained alongside BulkIn.
+func (s *Session) MsgIn(buf []byte, timeoutMs int) (int, error) {
+	if s == nil || s.dev == nil {
+		return 0, fmt.Errorf("session closed")
+	}
+	return s.dev.MsgIn(buf, timeoutMs)
+}
+
 // Close releases the interface, closes the handle and deinitialises the
 // libusb context. Safe to call more than once.
 func (s *Session) Close() {

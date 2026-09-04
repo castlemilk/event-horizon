@@ -39,6 +39,10 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	connectPass := fs.String("connect-pass", "", "WPA2 passphrase for --connect (empty = open network)")
 	dump := fs.Bool("dump", false, "hex-dump every received frame (raw diagnostics)")
 	prescan := fs.Bool("prescan", false, "issue a scan before --connect to populate the BSS list")
+	stack := fs.Bool("stack", false, "send MM_SET_STACK_START first — MANDATORY per the vendor driver but it "+
+		"disrupts the bulk pipes irrecoverably under macOS libusb (a kernel driver recovers them; we can't), "+
+		"so it is off by default; the radio still receives intermittently without it")
+	stackOnly := fs.Bool("stack-only", false, "send only MM_SET_STACK_START then exit")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
@@ -181,23 +185,42 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			fmt.Printf("  %s: CFM ok\n", name)
 		}
 	}
-	if *rf {
-		fmt.Println("sending RF/stack-start sequence (--rf, corrected ids)...")
+	// stack_start FIRST and MANDATORY: the firmware gates RX/scan/connect on
+	// is_stack_start=1, so without it every control message still cfm's but the
+	// radio stays dead. After it starts the MAC/PHY, the firmware routes later
+	// responses to the command IN endpoint (now drained by the RX loop); a
+	// short settle lets the stack come up before the next command.
+	if *stack || *stackOnly {
+		fmt.Println("sending stack_start (starts the MAC stack)...")
 		submitTimed("stack_start 0x007B", lmac.StackStartReq{}, 6*time.Second)
-		submitTimed("txpwr_idx_lvl 0x0079", lmac.TxpwrLvlReq{}, 4*time.Second)
-		submitTimed("rf_calib 0x006B", lmac.RFCalibReq{}, 6*time.Second)
-		submitTimed("get_macaddr 0x0075", lmac.GetMacAddrReq{}, 4*time.Second)
-		select {
-		case m := <-macCh:
-			if m != ([6]byte{}) {
-				mac = m
-				fmt.Printf("  device MAC = %02x:%02x:%02x:%02x:%02x:%02x\n", m[0], m[1], m[2], m[3], m[4], m[5])
-			} else {
-				fmt.Println("  device MAC = 00:00:00:00:00:00 (efuse blank; using LAA)")
-			}
-		case <-time.After(1 * time.Second):
+		if *stackOnly {
+			fmt.Println("stack_start sent (--stack-only).")
+			return 0
 		}
+		// Starting the stack halts the bulk pipes; every subsequent command
+		// then times out in-session. clear_halt turns that into
+		// LIBUSB_ERROR_OTHER instead — the disruption is not recoverable from
+		// user-space libusb on macOS. Left here behind --stack for a future
+		// kernel-side (DriverKit) driver that can re-sync the pipes.
+		time.Sleep(1500 * time.Millisecond)
+		s.sess.Device().ClearHalts()
+		time.Sleep(300 * time.Millisecond)
 	}
+	fmt.Println("sending RF sequence...")
+	submitTimed("txpwr_idx_lvl 0x0079", lmac.TxpwrLvlReq{}, 4*time.Second)
+	submitTimed("rf_calib 0x006B", lmac.RFCalibReq{}, 6*time.Second)
+	submitTimed("get_macaddr 0x0075", lmac.GetMacAddrReq{}, 4*time.Second)
+	select {
+	case m := <-macCh:
+		if m != ([6]byte{}) {
+			mac = m
+			fmt.Printf("  device MAC = %02x:%02x:%02x:%02x:%02x:%02x\n", m[0], m[1], m[2], m[3], m[4], m[5])
+		} else {
+			fmt.Println("  device MAC = 00:00:00:00:00:00 (efuse blank; using LAA)")
+		}
+	case <-time.After(1 * time.Second):
+	}
+	_ = rf
 
 	fmt.Println("bringing up station interface (reset -> me_config -> chan_config -> start -> coex -> add_if)...")
 	if !submit("mm_reset_req", lmac.ResetReq{}) {
