@@ -470,7 +470,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 						if *skipNet {
 							return 0
 						}
-						return runDhcpPing(ctx, s, vif, mac, ind.BSSID, netCh)
+						return runDhcpPing(ctx, s, vif, ind.APIdx, mac, ind.BSSID, netCh)
 					}
 					return 0
 				}

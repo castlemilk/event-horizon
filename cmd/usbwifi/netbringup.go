@@ -16,7 +16,7 @@ import (
 // then ICMP echo to the gateway. It proves the data path carries real IP,
 // which is the precondition for the Starlink interrogation. Returns 0 when
 // at least one ping reply arrives.
-func runDhcpPing(ctx context.Context, s *session, vif uint8, staMAC, apMAC [6]byte, netCh <-chan lmac.Ethernet) int {
+func runDhcpPing(ctx context.Context, s *session, vif, apIdx uint8, staMAC, apMAC [6]byte, netCh <-chan lmac.Ethernet) int {
 	bcast := [6]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 	zeroIP := [4]byte{}
 	bcastIP := [4]byte{255, 255, 255, 255}
@@ -24,7 +24,7 @@ func runDhcpPing(ctx context.Context, s *session, vif uint8, staMAC, apMAC [6]by
 	sendIP := func(da [6]byte, srcIP, dstIP [4]byte, proto uint8, payload []byte) error {
 		ip := (&lmac.IPv4{Src: srcIP, Dst: dstIP, Proto: proto, Payload: payload}).Encode()
 		tx := &lmac.TxData{DA: da, SA: staMAC, Ethertype: lmac.EtherTypeIP,
-			VifIdx: vif, StaIdx: 0xFF, Payload: ip}
+			VifIdx: vif, StaIdx: apIdx, Payload: ip}
 		frame, err := tx.Encode()
 		if err != nil {
 			return err
@@ -118,7 +118,7 @@ waitAck:
 	sendARP := func() {
 		arp := (&lmac.ARP{Op: 1, SenderMAC: staMAC, SenderIP: myIP, TargetIP: gw}).Encode()
 		tx := &lmac.TxData{DA: bcast, SA: staMAC, Ethertype: lmac.EtherTypeARP,
-			VifIdx: vif, StaIdx: 0xFF, Payload: arp}
+			VifIdx: vif, StaIdx: apIdx, Payload: arp}
 		if frame, err := tx.Encode(); err == nil {
 			_ = s.sess.BulkOutData(ctx, frame)
 		}

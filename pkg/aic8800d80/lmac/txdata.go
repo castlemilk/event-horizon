@@ -55,9 +55,10 @@ type TxData struct {
 	VifIdx    uint8
 	StaIdx    uint8 // 0xFF = unknown station
 	Payload   []byte
-	// ConfirmIdx requests a TX confirm: status_desc_addr = bit31|idx and
-	// the firmware returns idx in a 0x12 DATA_CFM record. -1 = no confirm.
-	ConfirmIdx int
+	// ConfirmSlot is the host slot index echoed back in the 0x12 DATA_CFM
+	// record, for frames that request a TX confirm. Which frames those are is
+	// NOT the caller's choice — see Encode.
+	ConfirmSlot uint8
 }
 
 func (t *TxData) Encode() ([]byte, error) {
@@ -78,10 +79,17 @@ func (t *TxData) Encode() ([]byte, error) {
 	p := out[usbHeaderSize : usbHeaderSize+hostdescSize]
 	binary.LittleEndian.PutUint16(p[0:2], uint16(len(t.Payload))) // packet_len
 	// p[2:4] flags_ext = 0.
-	if t.ConfirmIdx >= 0 {
-		binary.LittleEndian.PutUint32(p[4:8], 0x80000000|uint32(t.ConfirmIdx))
+	// need_cfm — status_desc_addr = bit31|slot. The reference requests a TX
+	// confirm for EAPOL and WAPI ethertypes (and for mgmt frames), and never
+	// for ordinary data: rwnx_tx.c:676-706. Derive it here rather than letting
+	// callers pass it, because an int field whose zero value means "confirm on
+	// slot 0" is a trap — DHCP inherited it by simply not setting the field,
+	// and the unreleased slot wedged the bulk OUT endpoint into
+	// LIBUSB_ERROR_TIMEOUT.
+	if t.Ethertype == EAPOLEthertype || t.Ethertype == WAPIEthertype {
+		binary.LittleEndian.PutUint32(p[4:8], 0x80000000|uint32(t.ConfirmSlot))
 	}
-	// else status_desc_addr = 0 (no TX confirm)
+	// else status_desc_addr = 0 (fire-and-forget, as for IP/ARP)
 	copy(p[8:14], t.DA[:])
 	copy(p[14:20], t.SA[:])
 	// ethertype travels big-endian (rwnx_tx.c copies h_proto raw).

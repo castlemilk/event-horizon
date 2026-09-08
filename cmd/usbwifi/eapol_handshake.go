@@ -41,7 +41,7 @@ func runTxProbe(ctx context.Context, s *session, vif, apIdx uint8, bssid, staMAC
 			logoff := []byte{1, 2, 0, 0}
 			tx := &lmac.TxData{DA: bssid, SA: staMAC,
 				Ethertype: lmac.EAPOLEthertype, VifIdx: vif, StaIdx: apIdx,
-				Payload: logoff, ConfirmIdx: -1}
+				Payload: logoff}
 			frame, err := tx.Encode()
 			if err != nil {
 				return 1
@@ -160,10 +160,6 @@ waitMsg1:
 			VifIdx:    vif,
 			StaIdx:    apIdx,
 			Payload:   k.Encode(),
-			// The reference sets need_cfm unconditionally for ethertype
-			// 0x8e88 (rwnx_tx.c:676-680), i.e. status_desc_addr =
-			// bit31|slot. EAPOL is never fire-and-forget on this chip.
-			ConfirmIdx: 0,
 		}
 		frame, err := tx.Encode()
 		if err != nil {

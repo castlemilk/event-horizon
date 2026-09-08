@@ -20,6 +20,9 @@ const (
 	EAPOLVersion   uint8  = 1
 	EAPOLTypeKey   uint8  = 3
 	EAPOLEthertype uint16 = 0x888e
+	// WAPIEthertype also takes the control-port TX path in the reference
+	// (rwnx_tx.c:676). We never send it, but the need_cfm rule keys on both.
+	WAPIEthertype uint16 = 0x88b4
 
 	KeyDescTypeRSN uint8 = 2
 

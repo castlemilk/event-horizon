@@ -22,7 +22,6 @@ func TestTxDataRecordFraming(t *testing.T) {
 		VifIdx:     0,
 		StaIdx:     0,
 		Payload:    payload,
-		ConfirmIdx: 0,
 	}
 	rec, err := tx.Encode()
 	if err != nil {
@@ -76,7 +75,7 @@ func TestTxDataRecordFraming(t *testing.T) {
 // A payload that lands the record exactly on a 4-byte boundary must not gain a
 // spurious pad — the length field has to stay equal to the real record size.
 func TestTxDataNoPadWhenAligned(t *testing.T) {
-	tx := &TxData{Payload: bytes.Repeat([]byte{1}, 120), ConfirmIdx: -1}
+	tx := &TxData{Ethertype: EtherTypeIP, Payload: bytes.Repeat([]byte{1}, 120)}
 	rec, err := tx.Encode()
 	if err != nil {
 		t.Fatalf("encode: %v", err)
@@ -88,6 +87,6 @@ func TestTxDataNoPadWhenAligned(t *testing.T) {
 		t.Errorf("length field = %d, want 152", got)
 	}
 	if got := uint32(rec[8]) | uint32(rec[9])<<8 | uint32(rec[10])<<16 | uint32(rec[11])<<24; got != 0 {
-		t.Errorf("status_desc_addr = %#x, want 0 when ConfirmIdx is -1", got)
+		t.Errorf("status_desc_addr = %#x, want 0 for ordinary data (IP)", got)
 	}
 }
