@@ -447,9 +447,9 @@ func runCmdBringup(ctx context.Context, args []string) int {
 				fmt.Printf("  SM_CONNECT_CFM status=%d (accepted; awaiting association)\n", st)
 			case ind := <-connIndCh:
 				if ind.StatusCode == 0 {
-					fmt.Printf("CONNECTED to %q: bssid=%02x:%02x:%02x:%02x:%02x:%02x aid=%d band=%d freq=%d\n",
+					fmt.Printf("CONNECTED to %q: bssid=%02x:%02x:%02x:%02x:%02x:%02x aid=%d apidx=%d vif=%d band=%d freq=%d\n",
 						*connectSSID, ind.BSSID[0], ind.BSSID[1], ind.BSSID[2], ind.BSSID[3], ind.BSSID[4], ind.BSSID[5],
-						ind.AID, ind.Band, ind.CenterFreq)
+						ind.AID, ind.APIdx, ind.VifIdx, ind.Band, ind.CenterFreq)
 					// Association done. With CONTROL_PORT_HOST the AP now
 					// starts the EAPOL 4-way handshake (msg1 on the data
 					// path). Run the host supplicant: derive keys, answer

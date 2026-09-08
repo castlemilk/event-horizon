@@ -19,6 +19,8 @@ import (
 // the bulk data pipe. On success it installs the PTK/GTK via MM_KEY_ADD and
 // opens the controlled port, returning 0.
 func runEapolHandshake(ctx context.Context, s *session, vif, apIdx uint8, bssid, staMAC [6]byte, ssid, passphrase string, eapolCh <-chan []byte) int {
+	fmt.Printf("  EAPOL: vif=%d apidx=%d sta=%02x:%02x:%02x:%02x:%02x:%02x\n",
+		vif, apIdx, staMAC[0], staMAC[1], staMAC[2], staMAC[3], staMAC[4], staMAC[5])
 	pmk := lmac.PMK(passphrase, ssid)
 	fmt.Println("  EAPOL: PMK derived, waiting up to 30s for msg1 ...")
 
@@ -78,7 +80,7 @@ waitMsg1:
 			SA:        staMAC,
 			Ethertype: lmac.EAPOLEthertype,
 			VifIdx:    vif,
-			StaIdx:    0xFF,
+			StaIdx:    apIdx,
 			Payload:   k.Encode(),
 		}
 		frame, err := tx.Encode()
