@@ -154,13 +154,16 @@ waitMsg1:
 			fmt.Printf("  EAPOL: msg2 frame %x\n", k.Encode())
 		}
 		tx := &lmac.TxData{
-			DA:         bssid,
-			SA:         staMAC,
-			Ethertype:  lmac.EAPOLEthertype,
-			VifIdx:     vif,
-			StaIdx:     apIdx,
-			Payload:    k.Encode(),
-			ConfirmIdx: -1,
+			DA:        bssid,
+			SA:        staMAC,
+			Ethertype: lmac.EAPOLEthertype,
+			VifIdx:    vif,
+			StaIdx:    apIdx,
+			Payload:   k.Encode(),
+			// The reference sets need_cfm unconditionally for ethertype
+			// 0x8e88 (rwnx_tx.c:676-680), i.e. status_desc_addr =
+			// bit31|slot. EAPOL is never fire-and-forget on this chip.
+			ConfirmIdx: 0,
 		}
 		frame, err := tx.Encode()
 		if err != nil {

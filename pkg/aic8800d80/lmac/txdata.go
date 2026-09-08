@@ -5,15 +5,31 @@ import (
 	"fmt"
 )
 
-// USB data-record framing for host->firmware TX (aicwf_usb.c:aicwf_usb_aggr):
+// USB data-record framing for host->firmware TX
+// (aicwf_usb.c:aicwf_usb_bus_txdata):
 //
-//	[0:2] D LE12, [2:4] D repeat, [4:6] D repeat, [6]=0x01 (data), [7]=0x00
+//	[0:2] total LE12, [2]=0x01 (data), [3]=0x00 (reserved)
+//	[4:32] hostdesc (txdesc_api), [32:] payload, padded to 4 bytes
 //
-// where D = len(hostdesc) + len(payload) + 4. Records are 4-byte aligned.
-// This differs from WrapCommand (type 0x11) used for LMAC control messages.
+// where total is the WHOLE record length, including this 4-byte header and the
+// padding. This differs from WrapCommand (type 0x11) used for LMAC commands.
+//
+// NEGATIVE RESULT — do not "restore" the 8-byte header. aicwf_usb.c has TWO TX
+// framings. aicwf_usb_aggr() (usb_header[8], length repeated three times,
+// len = hostdesc+payload+4) is compiled ONLY under CONFIG_USB_TX_AGGR, which
+// the reference Makefile:89 sets to `n`; the path actually built is
+// aicwf_usb_bus_txdata() (aicwf_usb.c:1733, usb_header[4]). We emitted the
+// aggregated form for a full session of debugging: the firmware reads byte 2
+// as the record type, saw 0x99 (a length byte) instead of 0x01, and silently
+// discarded every data frame. The USB write still returned success, so it
+// looked exactly like dead TX hardware — EAPOL msg2 was "sent", the AP never
+// saw it, retransmitted msg1, and finally sent SM_DISCONNECT_IND reason 15
+// (4-way handshake timeout).
 const (
 	txDataRecordType = 0x01
-	hostdescSize     = 28
+	usbHeaderSize    = 4  // aicwf_usb.c:1733 (u8 usb_header[4])
+	hostdescSize     = 28 // sizeof(struct txdesc_api)
+	txAlignment      = 4  // TX_ALIGNMENT, aicwf_txrxif.h:27
 )
 
 // Cipher suites for MM_KEY_ADD (lmac_mac.h, mapped rwnx_main.c).
@@ -48,17 +64,18 @@ func (t *TxData) Encode() ([]byte, error) {
 	if len(t.Payload) > 2304 {
 		return nil, fmt.Errorf("txdata: payload too large (%d)", len(t.Payload))
 	}
-	d := hostdescSize + len(t.Payload) + 4
-	out := make([]byte, 8+hostdescSize+len(t.Payload))
-	out[0] = byte(d & 0xff)
-	out[1] = byte((d >> 8) & 0x0f)
-	out[2] = out[0]
-	out[3] = out[1]
-	out[4] = out[0]
-	out[5] = out[1]
-	out[6] = txDataRecordType
-	out[7] = 0x00
-	p := out[8 : 8+hostdescSize]
+	// The length field is the padded total, header included — the reference
+	// pads first, then writes buf_len (aicwf_usb.c:1774-1783).
+	total := usbHeaderSize + hostdescSize + len(t.Payload)
+	if m := total % txAlignment; m != 0 {
+		total += txAlignment - m
+	}
+	out := make([]byte, total)
+	out[0] = byte(total & 0xff)
+	out[1] = byte((total >> 8) & 0x0f)
+	out[2] = txDataRecordType
+	out[3] = 0x00
+	p := out[usbHeaderSize : usbHeaderSize+hostdescSize]
 	binary.LittleEndian.PutUint16(p[0:2], uint16(len(t.Payload))) // packet_len
 	// p[2:4] flags_ext = 0.
 	if t.ConfirmIdx >= 0 {
@@ -75,11 +92,7 @@ func (t *TxData) Encode() ([]byte, error) {
 	p[24] = t.VifIdx
 	p[25] = t.StaIdx
 	// p[26:28] flags = 0
-	copy(out[8+hostdescSize:], t.Payload)
-	// 4-byte alignment padding.
-	if m := len(out) % 4; m != 0 {
-		out = append(out, make([]byte, 4-m)...)
-	}
+	copy(out[usbHeaderSize+hostdescSize:], t.Payload)
 	return out, nil
 }
 
