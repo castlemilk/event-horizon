@@ -3,7 +3,16 @@ package protocol
 import (
 	"encoding/binary"
 	"fmt"
+	"os"
 )
+
+// rxDebug traces every record boundary (AIC_RX_DEBUG=1) — used to verify the
+// data-frame stride, the prime suspect for the dead RX data path.
+var rxDebug = os.Getenv("AIC_RX_DEBUG") != ""
+
+// SetRxDebug enables record-boundary tracing at runtime (sudo strips the
+// environment, so the CLI wires this to its --dump flag).
+func SetRxDebug(on bool) { rxDebug = on }
 
 // RX frame types (aicwf_usb.h usb_type). Low bits distinguish
 // config/data; the CFG bit is 0x10.
@@ -97,11 +106,26 @@ func (s *RxStream) Next() (f RxFrame, ok bool, err error) {
 		aggr := pktLen + rxHWHRDLens
 		stride = 4 + ((aggr + rxAlignment - 1) / rxAlignment * rxAlignment)
 	}
-	if stride < 4 {
-		// Degenerate/corrupt record: drop the whole buffer, the stream
-		// cannot be resynchronized reliably.
+	if rxDebug {
+		fmt.Printf("[rxstream] pktLen=%d type=0x%02x stride=%d buffered=%d\n", pktLen, typ, stride, len(s.buf))
+	}
+	// Degenerate/corrupt record: drop the whole buffer and resynchronise on the
+	// next USB transfer, which always starts on a record boundary. (Byte-wise
+	// resync was tried and is measurably WORSE — it wanders through the
+	// remaining garbage and mis-frames the good records behind it: 0 scan
+	// results vs 1. Do not reintroduce it.)
+	// An out-of-range stride means we are mis-aligned in the stream (observed:
+	// pktLen=55358 type=0x0d stride=55424 — 0x0d is not even a valid type).
+	// Without the upper bound Next() returned "need more bytes" forever waiting
+	// for a 55KB record that never arrives: the stream STALLED permanently and
+	// the entire RX data path went dead — which is why scan results and
+	// SM_CONNECT_CFM/IND (both delivered inside 0xFFFF data frames) were never
+	// seen. Treat it as corrupt and resync on the next USB transfer, which
+	// always starts on a record boundary.
+	const maxRecord = 4096 // a record cannot exceed the 4096-byte read buffer
+	if stride < 4 || stride > maxRecord {
 		s.buf = nil
-		return RxFrame{}, false, fmt.Errorf("rx stream: corrupt record (len=%d type=0x%02x)", pktLen, typ)
+		return RxFrame{}, false, fmt.Errorf("rx stream: CORRUPT record (len=%d type=0x%02x stride=%d) — whole transfer dropped", pktLen, typ, stride)
 	}
 	if len(s.buf) < stride {
 		return RxFrame{}, false, nil // need more bytes

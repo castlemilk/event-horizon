@@ -63,8 +63,15 @@ func runAICLoader(args []string) int {
 	probeWindow := fs.Bool("probe-window", false, "EXPERIMENT: sweep the wedge-zone boundaries past zone ends (word + 16B writes and readbacks at each address; first wedge stops). Optional start index to continue a sweep after a power cycle.")
 	poisonMap := fs.Bool("poison-map", false, "EXPERIMENT: word-write every 4B address in 0x170210..0x1776b8 (30,392 B total, skips known zones) to test the ~9.1KB write-budget theory vs a single poison at 0x172430. Completes -> no budget, full window loadable. Write wedge -> poison (appended to /tmp/aic-poisons.txt), resume with start index.")
 	retentionMap := fs.Bool("retention-map", false, "EXPERIMENT: map which write path (word vs 16B) retains at each 16B address in 0x170000..0x17238f. 20B writes/address, 11,280 B total — one power cycle. Writes /tmp/aic-retention.txt for the AIC_HYBRID loader mode.")
+	writeMode := fs.String("write-mode", "", "firmware write strategy (survives sudo, unlike AIC_* env): 'vendor'=uniform 512B blocks, no wall/zone skip (matches the AICSemi reference driver)")
 	if err := fs.Parse(args); err != nil {
 		return 1
+	}
+
+	// Map --write-mode onto the loader's AIC_* env switch so it works under
+	// sudo (which strips the environment).
+	if *writeMode == "vendor" {
+		os.Setenv("AIC_VENDOR", "1")
 	}
 
 	log.SetPrefix("[aicloader] ")

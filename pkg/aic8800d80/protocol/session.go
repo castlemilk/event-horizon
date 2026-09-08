@@ -34,6 +34,9 @@ func OpenOperational(ctx context.Context) (*Session, error) {
 		dev, err = open(VID_AIC8800D80_OpWiFi, PID_AIC8800D80_OpWiFi)
 	}
 	if err != nil {
+		dev, err = open(VID_AIC8800D80_OpWin, PID_AIC8800D80_OpWin)
+	}
+	if err != nil {
 		Deinit(c)
 		return nil, fmt.Errorf("open operational device: %w", err)
 	}

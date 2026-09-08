@@ -1,0 +1,51 @@
+name: EventHorizonDriverKit
+options:
+  bundleIdPrefix: com.eventhorizon
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: WFTX6CN23F
+    CODE_SIGN_STYLE: Automatic
+targets:
+  AIC8800D80Driver:
+    type: "com.apple.product-type.driver-extension"
+    platform: macOS
+    sources:
+      - path: AIC8800D80/AIC8800D80Driver.iig
+      - path: AIC8800D80/AIC8800D80Driver.cpp
+    dependencies:
+      - sdk: USBDriverKit.framework
+    settings:
+      base:
+        SDKROOT: driverkit
+        DRIVERKIT_DEPLOYMENT_TARGET: "20.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.eventhorizon.driver.AIC8800D80
+        PRODUCT_NAME: AIC8800D80Driver
+        INFOPLIST_FILE: AIC8800D80/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: AIC8800D80/AIC8800D80Driver.dev.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: WFTX6CN23F
+        CODE_SIGN_IDENTITY: "Apple Development"
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
+        CLANG_ENABLE_MODULES: YES
+  EventHorizonActivator:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Activator/main.swift
+    dependencies:
+      - target: AIC8800D80Driver
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.eventhorizon.driver
+        PRODUCT_NAME: EventHorizonActivator
+        INFOPLIST_FILE: Activator/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Activator/Activator.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: WFTX6CN23F
+        SWIFT_VERSION: "5.0"
+        MACOSX_DEPLOYMENT_TARGET: "13.0"

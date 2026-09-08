@@ -50,7 +50,7 @@ type TxpwrLvlReq struct{}
 func (TxpwrLvlReq) Encode() ([]byte, error) {
 	const paramLen = 95
 	buf := make([]byte, HeaderSize+paramLen)
-	Header{ID: MMSetTxpwrIdxLvlReq, DestID: uint16(TaskMM), SrcID: DRVTaskID, ParamLen: paramLen}.Encode(buf)
+	Header{ID: MMSetTxpwrLvlReq, DestID: uint16(TaskMM), SrcID: DRVTaskID, ParamLen: paramLen}.Encode(buf)
 	p := buf[HeaderSize:]
 	p[0] = 1 // enable
 	off := 1
@@ -89,6 +89,51 @@ func (RFCalibReq) Encode() ([]byte, error) {
 	p[20] = 0                                          // xtal_cap
 	p[21] = 0                                          // xtal_cap_fine
 	// p[22:24] trailing pad
+	return buf, nil
+}
+
+// DbgMemWriteReq is DBG_MEM_WRITE_REQ (task DBG): a single {addr,val} 32-bit
+// memory/register write. On the OPERATIONAL firmware these must be LMAC-framed
+// (WrapCommand), unlike the boot-ROM loader's raw framing — which is why
+// protocol.MemWrite (boot-ROM style) silently fails on the running radio. The
+// vendor's Windows driver writes the RF frontend registers this way.
+type DbgMemWriteReq struct{ Addr, Val uint32 }
+
+func (r DbgMemWriteReq) Encode() ([]byte, error) {
+	buf := make([]byte, HeaderSize+8)
+	Header{ID: DBGMemWriteReq, DestID: uint16(TaskDBG), SrcID: DRVTaskID, ParamLen: 8}.Encode(buf)
+	binary.LittleEndian.PutUint32(buf[HeaderSize:HeaderSize+4], r.Addr)
+	binary.LittleEndian.PutUint32(buf[HeaderSize+4:HeaderSize+8], r.Val)
+	return buf, nil
+}
+
+// DbgMemReadReq is DBG_MEM_READ_REQ (task DBG): read one 32-bit word at Addr.
+// LMAC-framed for the operational firmware (see DbgMemWriteReq). The reply is
+// DBG_MEM_READ_CFM (0x401) with payload {u32 memaddr, u32 memdata}.
+type DbgMemReadReq struct{ Addr uint32 }
+
+func (r DbgMemReadReq) Encode() ([]byte, error) {
+	buf := make([]byte, HeaderSize+4)
+	Header{ID: DBGMemReadReq, DestID: uint16(TaskDBG), SrcID: DRVTaskID, ParamLen: 4}.Encode(buf)
+	binary.LittleEndian.PutUint32(buf[HeaderSize:HeaderSize+4], r.Addr)
+	return buf, nil
+}
+
+// RFConfigReq is MM_SET_RF_CONFIG_REQ (0x69) — the RF-calibration message the
+// vendor's Windows driver (aicusbwifi.sys) actually sends for this chip
+// (368b:8d85), with the SAME 24-byte payload our RFCalibReq uses but under id
+// 0x69. On this firmware rf_calib (0x6b) CFMs yet leaves the frontend deaf;
+// 0x69 is what configures the radio so it can TX/RX and associate.
+type RFConfigReq struct{}
+
+func (RFConfigReq) Encode() ([]byte, error) {
+	const paramLen = 24
+	buf := make([]byte, HeaderSize+paramLen)
+	Header{ID: MMSetRFConfigReq, DestID: uint16(TaskMM), SrcID: DRVTaskID, ParamLen: paramLen}.Encode(buf)
+	p := buf[HeaderSize:]
+	binary.LittleEndian.PutUint32(p[0:4], 0x0f8f)      // cal_cfg_24g
+	binary.LittleEndian.PutUint32(p[4:8], 0x0f0f)      // cal_cfg_5g
+	binary.LittleEndian.PutUint32(p[8:12], 0x0c34c008) // param_alpha
 	return buf, nil
 }
 

@@ -1,9 +1,11 @@
 // AIC8800D80Driver.iig
 //
 // DriverKit driver for the AICSEMI AIC8800D80 USB Wi-Fi 6 adapter.
-// Matches the operational VID:PID (0xa69c:0x8d81 / 0xa69c:0x8d83) and
-// claims the IOUSBHostDevice so the firmware loader can leave it
-// in a known state.
+// Matches the operational VID:PID (0xa69c:0x8d81 / 0xa69c:0x8d83), claims the
+// USB interface, and drives the LMAC host-target protocol IN-KERNEL — where an
+// IOUSBHostPipe can ClearStall/Abort to recover the bulk pipes after
+// MM_SET_STACK_START halts them (the exact operation user-space libusb cannot
+// perform on macOS, which is why the radio never came up from the Go port).
 
 #ifndef AIC8800D80Driver_h
 #define AIC8800D80Driver_h
@@ -11,6 +13,7 @@
 #include <Availability.h>
 #include <DriverKit/IOService.iig>
 #include <USBDriverKit/IOUSBHostDevice.iig>
+#include <USBDriverKit/IOUSBHostInterface.iig>
 #include <USBDriverKit/IOUSBHostPipe.iig>
 
 class AIC8800D80Driver: public IOService

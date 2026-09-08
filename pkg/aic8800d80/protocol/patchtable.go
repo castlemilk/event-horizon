@@ -132,5 +132,17 @@ func UnpackPatchInfo(tables []PatchTable) (*PatchInfo, error) {
 		}
 		return pi, nil
 	}
-	return nil, fmt.Errorf("patch info: no AICBT_PT_INF (type 0) entry in table")
+	// No AICBT_PT_INF section. The Windows loader (aicloadfw.sys, extracted
+	// from the UGREEN AX900's ZeroCD volume) ships a 5-section table with no
+	// PINF and instead hardcodes the U02 addresses — the same defaults the
+	// Linux reference uses (FW_RAM_ADID_BASE_ADDR_8800D80_U02 /
+	// FW_RAM_PATCH_BASE_ADDR_8800D80_U02, reset via 0x40500150 = 1).
+	return &PatchInfo{
+		AddrAdid:     0x00201940,
+		AddrPatch:    0x0020B43C,
+		ResetAddr:    0x40500150,
+		ResetVal:     0x00000001,
+		AdidFlagAddr: 0x40500150,
+		AdidFlag:     0x00000001,
+	}, nil
 }

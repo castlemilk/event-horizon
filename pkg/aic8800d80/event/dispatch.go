@@ -71,11 +71,19 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 			// MPDU sits at a fixed offset after the ~56-byte hw_rxhdr (record
 			// offset 60 -> payload offset 56). Fall back to a search if the
 			// fixed offset doesn't hold.
+			// The firmware aggregates several beacons/scan results into a single
+			// data frame, so decode EVERY candidate offset instead of stopping
+			// at the first hit — that is why each scan reported exactly one
+			// BSS. Duplicates within a frame are filtered here; across frames
+			// the caller's BSSID set handles it.
+			seenHere := map[[6]byte]bool{}
 			for _, base := range beaconMPDUOffsets(payload) {
-				if r, ok := decodeBeacon(payload[base:]); ok {
-					d.OnScanResult(r)
-					break
+				r, ok := decodeBeacon(payload[base:])
+				if !ok || seenHere[r.BSSID] {
+					continue
 				}
+				seenHere[r.BSSID] = true
+				d.OnScanResult(r)
 			}
 		}
 		return nil

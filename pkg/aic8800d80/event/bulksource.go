@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"sync"
 
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/protocol"
 )
@@ -31,9 +32,41 @@ type bulkFrameSource struct {
 	msgStream protocol.RxStream // frames from the command IN endpoint
 	timeoutMs int
 	hasMsg    bool
+
+	// A dedicated reader keeps a bulk-IN read permanently outstanding. Reading
+	// only between dispatches (the previous design) dropped every frame that
+	// arrived while a frame was being processed, which is why a scan reported
+	// only 1-3 of the BSSes actually on air.
+	once     sync.Once
+	bulkCh   chan []byte
+	msgCh    chan []byte
+	readerWG sync.Once
+}
+
+// startReaders launches the background pump exactly once.
+func (s *bulkFrameSource) startReaders() {
+	s.bulkCh = make(chan []byte, 256)
+	pump := func(read func([]byte, int) (int, error), out chan []byte) {
+		for {
+			buf := make([]byte, 4096)
+			n, err := read(buf, s.timeoutMs)
+			if err == nil && n > 0 {
+				select {
+				case out <- buf[:n]:
+				default: // consumer behind; drop oldest-style backpressure
+				}
+			}
+		}
+	}
+	go pump(s.dev.BulkIn, s.bulkCh)
+	if s.hasMsg {
+		s.msgCh = make(chan []byte, 256)
+		go pump(s.dev.MsgIn, s.msgCh)
+	}
 }
 
 func (s *bulkFrameSource) Next(ctx context.Context) (protocol.RxFrame, error) {
+	s.once.Do(s.startReaders)
 	for {
 		if f, ok, err := s.stream.Next(); ok || err != nil {
 			return f, err
@@ -46,24 +79,22 @@ func (s *bulkFrameSource) Next(ctx context.Context) (protocol.RxFrame, error) {
 		if ctx.Err() != nil {
 			return protocol.RxFrame{}, ctx.Err()
 		}
-		// Split the read timeout across the two endpoints so neither starves
-		// the other; a blocking read on one must not stall the other.
-		to := s.timeoutMs
-		if s.hasMsg {
-			to = s.timeoutMs / 2
-			if to < 20 {
-				to = 20
-			}
-		}
-		buf := make([]byte, 4096)
-		if n, rerr := s.dev.BulkIn(buf, to); rerr == nil && n > 0 {
-			s.stream.Feed(buf[:n])
-		}
-		if s.hasMsg {
-			mbuf := make([]byte, 4096)
-			if n, rerr := s.dev.MsgIn(mbuf, to); rerr == nil && n > 0 {
-				s.msgStream.Feed(mbuf[:n])
-			}
+		select {
+		case chunk := <-s.bulkCh:
+			s.stream.Feed(chunk)
+		case chunk := <-msgChan(s):
+			s.msgStream.Feed(chunk)
+		case <-ctx.Done():
+			return protocol.RxFrame{}, ctx.Err()
 		}
 	}
+}
+
+// msgChan returns the command-endpoint channel, or nil (blocks forever, which
+// select handles) when the device has no second IN endpoint.
+func msgChan(s *bulkFrameSource) chan []byte {
+	if !s.hasMsg {
+		return nil
+	}
+	return s.msgCh
 }

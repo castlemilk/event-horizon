@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/event"
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
+	"github.com/castlemilk/event-horizon/pkg/aic8800d80/protocol"
 )
 
 // runCmdBringup runs the full station bring-up sequence in ONE session and
@@ -37,6 +39,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	connectSSID := fs.String("connect", "", "after bring-up, associate to this SSID via SM_CONNECT (skips scan)")
 	connectChan := fs.Int("connect-channel", 0, "channel of the --connect SSID (0 = any)")
 	connectPass := fs.String("connect-pass", "", "WPA2 passphrase for --connect (empty = open network)")
+	connectBSSID := fs.String("connect-bssid", "", "target a specific BSSID (aa:bb:cc:dd:ee:ff) — required style for HIDDEN APs, which do not answer a broadcast-BSSID probe")
 	dump := fs.Bool("dump", false, "hex-dump every received frame (raw diagnostics)")
 	prescan := fs.Bool("prescan", false, "issue a scan before --connect to populate the BSS list")
 	stack := fs.Bool("stack", false, "send MM_SET_STACK_START first — MANDATORY per the vendor driver but it "+
@@ -58,6 +61,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	macCh := make(chan [6]byte, 4)
 	connCfmCh := make(chan uint8, 4)
 	connIndCh := make(chan lmac.ConnectInd, 4)
+	memReadCh := make(chan []byte, 4)
 
 	d := &event.Dispatch{
 		OnResetCfm: func() { fmt.Println("  MM_RESET_CFM ok") },
@@ -90,6 +94,23 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			}
 		},
 		OnRaw: func(msgID uint16, p []byte) {
+			// Always surface SM-task (0x18xx) traffic: the association result
+			// is the one thing we cannot otherwise observe, and it has only
+			// ever been seen a session late. Printing it unconditionally shows
+			// whether anything arrives during the connect wait.
+			if msgID>>10 == uint16(lmac.TaskSM) {
+				n := len(p)
+				if n > 12 {
+					n = 12
+				}
+				fmt.Printf("  [SM 0x%04x len=%d] % x\n", msgID, len(p), p[:n])
+			}
+			if msgID == lmac.DBGMemReadCfm {
+				select {
+				case memReadCh <- append([]byte(nil), p...):
+				default:
+				}
+			}
 			if !*dump {
 				return
 			}
@@ -149,6 +170,10 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		},
 	}
 
+	if *dump {
+		protocol.SetRxDebug(true)
+	}
+
 	// Nothing else may hold the device.
 	stopDeviceHolders()
 
@@ -158,16 +183,6 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		return 1
 	}
 	defer s.close()
-
-	submit := func(name string, msg lmac.Builder) bool {
-		c, cancel := context.WithTimeout(ctx, *stepTimeout)
-		defer cancel()
-		if err := s.submitter.Submit(c, msg); err != nil {
-			log.Printf("%s: %v", name, err)
-			return false
-		}
-		return true
-	}
 
 	// Fallback station MAC if the device does not return one.
 	mac := [6]byte{0x02, 0x11, 0x22, 0x33, 0x44, 0x55}
@@ -185,29 +200,67 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			fmt.Printf("  %s: CFM ok\n", name)
 		}
 	}
-	// stack_start FIRST and MANDATORY: the firmware gates RX/scan/connect on
-	// is_stack_start=1, so without it every control message still cfm's but the
-	// radio stays dead. After it starts the MAC/PHY, the firmware routes later
-	// responses to the command IN endpoint (now drained by the RX loop); a
-	// short settle lets the stack come up before the next command.
-	if *stack || *stackOnly {
-		fmt.Println("sending stack_start (starts the MAC stack)...")
-		submitTimed("stack_start 0x007B", lmac.StackStartReq{}, 6*time.Second)
-		if *stackOnly {
-			fmt.Println("stack_start sent (--stack-only).")
-			return 0
+	// Windows order (from disassembling the vendor's aicusbwifi.sys for this
+	// chip, 368b:8d85): RF / power / calibration config runs BEFORE stack_start,
+	// so the MAC/PHY starts already configured. Our old order sent stack_start
+	// FIRST, which starts an unconfigured stack that faults and wedges the
+	// command pipe (every later command then times out). Config first, stack
+	// after.
+	fmt.Println("sending RF sequence (before stack_start, matching the vendor driver)...")
+	// RF frontend register writes + rf_config (msg 0x69), lifted from the
+	// vendor Windows driver for this chip. Without them the radio CFMs every
+	// command but stays deaf — it never hears beacons or reaches the AP, so
+	// association never completes. These must precede stack_start.
+	// LMAC-framed, fire-and-forget: the operational firmware needs the
+	// WrapCommand prefix (protocol.MemWrite's boot-ROM framing is malformed
+	// here) and doesn't reliably CFM these, so don't block on an ACK.
+	for _, w := range []struct{ addr, val uint32 }{
+		{0x40344058, 0x00800000},
+		{0x40200028, 0x0021047e},
+		{0x40200024, 0x0000011d},
+	} {
+		if f, err := (lmac.DbgMemWriteReq{Addr: w.addr, Val: w.val}).Encode(); err == nil {
+			if err := s.sess.BulkOut(ctx, lmac.WrapCommand(f)); err != nil {
+				fmt.Printf("  rf reg 0x%08x=0x%08x: %v\n", w.addr, w.val, err)
+			}
 		}
-		// Starting the stack halts the bulk pipes; every subsequent command
-		// then times out in-session. clear_halt turns that into
-		// LIBUSB_ERROR_OTHER instead — the disruption is not recoverable from
-		// user-space libusb on macOS. Left here behind --stack for a future
-		// kernel-side (DriverKit) driver that can re-sync the pipes.
-		time.Sleep(1500 * time.Millisecond)
-		s.sess.Device().ClearHalts()
-		time.Sleep(300 * time.Millisecond)
 	}
-	fmt.Println("sending RF sequence...")
-	submitTimed("txpwr_idx_lvl 0x0079", lmac.TxpwrLvlReq{}, 4*time.Second)
+	submitTimed("rf_config 0x0069", lmac.RFConfigReq{}, 4*time.Second)
+
+	// patch_config (from the vendor's aicusbwifi.sys, fn 0x140044ab0): read a
+	// base pointer out of firmware RAM at 0x110180, then poke the tx-adaptivity
+	// / MAC-config registers relative to it. This is part of what brings the RX
+	// frontend to life. Uses the LMAC-framed mem read/write (operational fw).
+	readMem := func(addr uint32) (uint32, bool) {
+		for len(memReadCh) > 0 {
+			<-memReadCh // drain stale
+		}
+		if f, err := (lmac.DbgMemReadReq{Addr: addr}).Encode(); err == nil {
+			_ = s.sess.BulkOut(ctx, lmac.WrapCommand(f))
+		}
+		select {
+		case p := <-memReadCh:
+			if len(p) >= 8 {
+				return binary.LittleEndian.Uint32(p[4:8]), true
+			}
+		case <-time.After(2 * time.Second):
+		}
+		return 0, false
+	}
+	if base, ok := readMem(0x00110180); ok && base != 0 && base != 0xffffffff {
+		fmt.Printf("  patch_config base = 0x%08x\n", base)
+		for _, w := range []struct {
+			off, val uint32
+		}{{0x04, 0x0000320a}, {0x94, 0x00000000}, {0xf8, 0x00010138}} {
+			if f, err := (lmac.DbgMemWriteReq{Addr: base + w.off, Val: w.val}).Encode(); err == nil {
+				_ = s.sess.BulkOut(ctx, lmac.WrapCommand(f))
+			}
+		}
+	} else {
+		fmt.Printf("  patch_config: read of 0x110180 failed (base=0x%08x ok=%v)\n", base, ok)
+	}
+
+	submitTimed("txpwr_lvl 0x0077", lmac.TxpwrLvlReq{}, 4*time.Second)
 	submitTimed("rf_calib 0x006B", lmac.RFCalibReq{}, 6*time.Second)
 	submitTimed("get_macaddr 0x0075", lmac.GetMacAddrReq{}, 4*time.Second)
 	select {
@@ -222,25 +275,38 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	}
 	_ = rf
 
+	// stack_start AFTER config: the firmware gates RX/scan/connect on
+	// is_stack_start=1 and starts the MAC/PHY. With config already applied it
+	// comes up cleanly; a short settle lets it stabilise before MAC init.
+	if *stack || *stackOnly {
+		fmt.Println("sending stack_start (starts the MAC stack)...")
+		submitTimed("stack_start 0x007B", lmac.StackStartReq{}, 6*time.Second)
+		// ALWAYS stop here. Every command sent after stack_start in the SAME
+		// session gets no CFM (measured: reset/me_config/chan/start/coex/add_if
+		// all time out), yet they ARE delivered — so continuing would apply a
+		// reset that the next session's MAC init then repeats, and a SECOND
+		// MM_RESET permanently kills RX until the firmware is re-flashed.
+		// Correct flow is two runs: `bringup --stack` (RF config + stack_start),
+		// then `bringup ...` (MAC init + scan) in a fresh session = one reset.
+		fmt.Println("stack_start sent — now run bringup again (without --stack) to init the MAC and scan.")
+		return 0
+	}
+
 	fmt.Println("bringing up station interface (reset -> me_config -> chan_config -> start -> coex -> add_if)...")
-	if !submit("mm_reset_req", lmac.ResetReq{}) {
-		return 1
-	}
-	if !submit("me_config_req", lmac.ConfigReq{}) {
-		return 1
-	}
-	if !submit("me_chan_config_req", lmac.ChanConfigReq{}) {
-		return 1
-	}
-	if !submit("mm_start_req", &lmac.StartReq{}) {
-		return 1
-	}
-	if !submit("mm_set_coex_req", lmac.CoexReq{}) {
-		return 1
-	}
-	if !submit("mm_add_if_req", &lmac.AddIfReq{Type: lmac.IfTypeSTA, Addr: mac}) {
-		return 1
-	}
+	// ACK-tolerant: right after stack_start the firmware often skips the CFM
+	// for the first command (mm_reset), which used to abort the run. That
+	// forced a 2-run workaround (run 1 --stack, run 2 the rest) — and the
+	// second run's extra MM_RESET on an already-running stack KILLS RX (only
+	// the run right after a fresh flash ever received). Keep going on a missing
+	// ACK so the whole vendor sequence (RF -> stack_start -> reset -> me_config
+	// -> chan -> start -> coex -> add_if -> scan) runs in ONE session with a
+	// single reset, exactly like the Windows driver.
+	submitTimed("mm_reset_req", lmac.ResetReq{}, *stepTimeout)
+	submitTimed("me_config_req", lmac.ConfigReq{HTSupported: true}, *stepTimeout)
+	submitTimed("me_chan_config_req", lmac.ChanConfigReq{}, *stepTimeout)
+	submitTimed("mm_start_req", &lmac.StartReq{}, *stepTimeout)
+	submitTimed("mm_set_coex_req", lmac.CoexReq{}, *stepTimeout)
+	submitTimed("mm_add_if_req", &lmac.AddIfReq{Type: lmac.IfTypeSTA, Addr: mac}, *stepTimeout)
 
 	var vif uint8
 	select {
@@ -266,6 +332,17 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			AuthType: lmac.AuthOpen, // WPA2 uses open 802.11 auth, then EAPOL
 			Flags:    0,
 		}
+		if *connectBSSID != "" {
+			var b [6]byte
+			if n, _ := fmt.Sscanf(*connectBSSID, "%02x:%02x:%02x:%02x:%02x:%02x",
+				&b[0], &b[1], &b[2], &b[3], &b[4], &b[5]); n == 6 {
+				creq.BSSID = b
+				fmt.Printf("  targeting BSSID %s directly (hidden-AP path)\n", *connectBSSID)
+			} else {
+				log.Printf("bad --connect-bssid %q", *connectBSSID)
+				return 1
+			}
+		}
 		if *band == "5g" {
 			creq.Band = lmac.Band5G
 		}
@@ -283,7 +360,12 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		// Opt-in: on this firmware a preceding scan sometimes suppresses the
 		// SM_CONNECT response, so it is off by default.
 		if *prescan {
-			sreq := &lmac.ScanStartReq{Band: lmac.Band2G, BSSID: lmac.BroadcastBSSID, VifIdx: vif}
+			// BROAD scan (no SSID filter): this firmware treats the ssid array
+			// as a match FILTER and returns zero results for a directed scan,
+			// which left the firmware's BSS list EMPTY — SM_CONNECT then fails
+			// with status_code=1 and an all-zero BSSID (it cannot find the BSS).
+			sreq := &lmac.ScanStartReq{Band: lmac.Band2G, BSSID: lmac.BroadcastBSSID, VifIdx: vif,
+				Duration: 120}
 			if *connectChan != 0 {
 				sreq.Channels = []lmac.ChannelInfo{{Prim20Ch: uint8(*connectChan), Center1: uint8(*connectChan), Width: lmac.ChanWidth20}}
 			} else {
@@ -312,10 +394,20 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			log.Printf("send sm_connect_req: %v", err)
 			return 1
 		}
-		fmt.Println("  SM_CONNECT_REQ sent; waiting up to 25s for SM_CONNECT_IND ...")
-		deadline := time.After(25 * time.Second)
+		fmt.Println("  SM_CONNECT_REQ sent; waiting up to 75s for SM_CONNECT_IND ...")
+		deadline := time.After(75 * time.Second)
+		// The IND is queued by the firmware and only surfaced once the host
+		// sends more commands — it reliably appeared in the NEXT session (which
+		// re-runs the MAC init) but never during a passive wait. Poll with a
+		// harmless MM message to flush any pending indication in-session.
+		flush := time.NewTicker(4 * time.Second)
+		defer flush.Stop()
 		for {
 			select {
+			case <-flush.C:
+				if f, err := (lmac.GetMacAddrReq{}).Encode(); err == nil {
+					_ = s.sess.BulkOut(ctx, lmac.WrapCommand(f))
+				}
 			case st := <-connCfmCh:
 				fmt.Printf("  SM_CONNECT_CFM status=%d (accepted; awaiting association)\n", st)
 			case ind := <-connIndCh:
@@ -328,7 +420,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 				fmt.Printf("association FAILED: status_code=%d\n", ind.StatusCode)
 				return 1
 			case <-deadline:
-				fmt.Println("no SM_CONNECT_IND within 25s — association did not complete")
+				fmt.Println("no SM_CONNECT_IND within 75s — association did not complete")
 				return 1
 			}
 		}
@@ -349,12 +441,26 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		chans = append(chans, lmac.ChannelInfo{Prim20Ch: uint8(v), Center1: uint8(v), Width: lmac.ChanWidth20})
 	}
 
-	req := &lmac.ScanStartReq{Band: b, Channels: chans, BSSID: lmac.BroadcastBSSID, VifIdx: vif}
+	// duration is the per-channel dwell in TU (1024us). Left at 0 the firmware
+	// uses a minimal dwell and misses most beacons (beacon interval is ~100 TU).
+	// NOTE: adding a zero-length "wildcard" SSID (ssid_cnt=1) to force an
+	// active scan makes this firmware return ZERO results — it treats the ssid
+	// array as a match FILTER, and an empty entry matches nothing. Leave
+	// ssid_cnt=0 (passive/broadcast).
+	req := &lmac.ScanStartReq{Band: b, Channels: chans, BSSID: lmac.BroadcastBSSID, VifIdx: vif, Duration: 120}
 	fmt.Printf("scanning vif=%d band=%s channels=%s (dwell %v) ...\n", vif, *band, *channels, *duration)
-	scanCtx, cancel := context.WithTimeout(ctx, *duration+5*time.Second)
-	defer cancel()
-	if err := s.submitter.Submit(scanCtx, req); err != nil {
-		log.Printf("scan_start_req: %v", err)
+	// Fire-and-forget: this firmware often does not ACK scan_start (same as
+	// SM_CONNECT), so blocking on the submitter's ACK bails before the scan
+	// even runs. Send raw; results arrive asynchronously via OnScanResult.
+	// NOTE: re-issuing scan_start during an in-flight scan RESTARTS it, so the
+	// scan never completes and reports nothing (measured: 0 BSS). Send it once.
+	frame, ferr := req.Encode()
+	if ferr != nil {
+		log.Printf("encode scan_start: %v", ferr)
+		return 1
+	}
+	if err := s.sess.BulkOut(ctx, lmac.WrapCommand(frame)); err != nil {
+		log.Printf("scan_start send: %v", err)
 		return 1
 	}
 	select {

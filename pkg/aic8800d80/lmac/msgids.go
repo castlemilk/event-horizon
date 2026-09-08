@@ -51,7 +51,15 @@ const (
 	MMSetRFCalibCfm     uint16 = 0x006C
 	MMGetMacAddrReq     uint16 = 0x0075 // ordinal 117
 	MMGetMacAddrCfm     uint16 = 0x0076
-	MMSetTxpwrIdxLvlReq uint16 = 0x0079 // ordinal 121
+	// TX-power messages, corrected from the vendor's Windows driver
+	// (aicusbwifi.sys) for THIS firmware: rwnx_send_txpwr_lvl_v3_req builds
+	// msg 0x77 and rwnx_send_txpwr_ofst2x_req builds msg 0x79 (stack_start is
+	// 0x7b). We previously sent the 95-byte power-LEVEL table under 0x79 — the
+	// OFFSET message — so the levels were never set and the offset table was
+	// fed garbage.
+	MMSetTxpwrLvlReq    uint16 = 0x0077
+	MMSetTxpwrLvlCfm    uint16 = 0x0078
+	MMSetTxpwrIdxLvlReq uint16 = 0x0079 // == txpwr_ofst2x on this firmware
 	MMSetTxpwrIdxLvlCfm uint16 = 0x007A
 	MMSetTxpwrOfstReq   uint16 = 0x007B // ordinal 123 in the reference
 	// stack_start is at 0x007B on THIS firmware (it omits the txpwr_ofst pair,
