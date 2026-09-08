@@ -38,24 +38,36 @@ const (
 	KeyInfoEncrypted uint16 = 0x1000
 )
 
-// KeyFrame is an EAPOL-Key descriptor (type 2, RSN). Wire layout:
+// KeyFrame is an EAPOL-Key descriptor (type 2, RSN). Wire layout
+// (IEEE 802.11-2016 12.7.2 fig 12-33) — note the 8-byte Reserved field
+// between the RSC and the MIC. It is easy to miss (it is "Key ID" in the
+// pre-RSN descriptor and reserved ever since), and omitting it shifts the
+// MIC, the key-data length and the key data 8 bytes early, which makes every
+// frame we send unparseable and every MIC we check wrong:
 //
 //	802.1X hdr: ver@0, type@1(=3), len@2:2 BE
 //	desc_type@4, key_info@5:2 BE, key_len@7:2 BE, replay@9:8 BE,
-//	nonce@17:32, iv@49:16, rsc@65:8, mic@73:16, keydatalen@89:2 BE,
-//	keydata@91:var
+//	nonce@17:32, iv@49:16, rsc@65:8, reserved@73:8, mic@81:16,
+//	keydatalen@97:2 BE, keydata@99:var
 type KeyFrame struct {
+	// Version is the 802.1X header version as received (1 or 2). It is part
+	// of the MIC-protected bytes, so a frame we re-encode must reproduce it.
+	Version  uint8
 	KeyInfo  uint16
 	KeyLen   uint16
 	Replay   uint64
 	Nonce    [32]byte
 	IV       [16]byte
 	RSC      [8]byte
+	Reserved [8]byte
 	MIC      [16]byte
 	KeyData  []byte
+	// Raw is the exact frame Decode was handed. The MIC covers these bytes
+	// verbatim, so VerifyMIC must use them rather than a re-encoding.
+	Raw []byte
 }
 
-const keyFrameFixed = 4 + 91 // 802.1X hdr + fixed descriptor
+const keyFrameFixed = 4 + 95 // 802.1X hdr + fixed descriptor
 
 func (k *KeyFrame) Decode(frame []byte) error {
 	if len(frame) < keyFrameFixed {
@@ -64,27 +76,40 @@ func (k *KeyFrame) Decode(frame []byte) error {
 	if frame[1] != EAPOLTypeKey || frame[4] != KeyDescTypeRSN {
 		return fmt.Errorf("eapol: not an RSN key frame (type=%d desc=%d)", frame[1], frame[4])
 	}
+	k.Version = frame[0]
 	k.KeyInfo = binary.BigEndian.Uint16(frame[5:7])
+	// We only implement descriptor version 2 (HMAC-SHA1 MIC + AES key wrap).
+	// Version 0/3 use AES-128-CMAC (SHA256 AKMs, SAE, PMF); failing here names
+	// the reason instead of surfacing as an inexplicable MIC mismatch later.
+	if v := k.KeyInfo & KeyInfoVerMask; v != KeyInfoVerHMACSHA1 {
+		return fmt.Errorf("eapol: unsupported key descriptor version %d (only 2/HMAC-SHA1 implemented)", v)
+	}
 	k.KeyLen = binary.BigEndian.Uint16(frame[7:9])
 	k.Replay = binary.BigEndian.Uint64(frame[9:17])
 	copy(k.Nonce[:], frame[17:49])
 	copy(k.IV[:], frame[49:65])
 	copy(k.RSC[:], frame[65:73])
-	copy(k.MIC[:], frame[73:89])
-	kdl := int(binary.BigEndian.Uint16(frame[89:91]))
+	copy(k.Reserved[:], frame[73:81])
+	copy(k.MIC[:], frame[81:97])
+	kdl := int(binary.BigEndian.Uint16(frame[97:99]))
 	if len(frame) < keyFrameFixed+kdl {
 		return fmt.Errorf("eapol: short key data (%d < %d)", len(frame), keyFrameFixed+kdl)
 	}
 	k.KeyData = append([]byte(nil), frame[keyFrameFixed:keyFrameFixed+kdl]...)
+	k.Raw = append([]byte(nil), frame[:keyFrameFixed+kdl]...)
 	return nil
 }
 
 // Encode serializes the frame (MIC as held — zero it before computing).
 func (k *KeyFrame) Encode() []byte {
 	out := make([]byte, keyFrameFixed+len(k.KeyData))
-	out[0] = EAPOLVersion
+	out[0] = k.Version
+	if out[0] == 0 {
+		out[0] = EAPOLVersion
+	}
 	out[1] = EAPOLTypeKey
-	binary.BigEndian.PutUint16(out[2:4], uint16(91+len(k.KeyData)))
+	// The 802.1X length field covers the body only, not the 4-byte header.
+	binary.BigEndian.PutUint16(out[2:4], uint16(keyFrameFixed-4+len(k.KeyData)))
 	out[4] = KeyDescTypeRSN
 	binary.BigEndian.PutUint16(out[5:7], k.KeyInfo)
 	binary.BigEndian.PutUint16(out[7:9], k.KeyLen)
@@ -92,11 +117,16 @@ func (k *KeyFrame) Encode() []byte {
 	copy(out[17:49], k.Nonce[:])
 	copy(out[49:65], k.IV[:])
 	copy(out[65:73], k.RSC[:])
-	copy(out[73:89], k.MIC[:])
-	binary.BigEndian.PutUint16(out[89:91], uint16(len(k.KeyData)))
-	copy(out[91:], k.KeyData)
+	copy(out[73:81], k.Reserved[:])
+	copy(out[81:97], k.MIC[:])
+	binary.BigEndian.PutUint16(out[97:99], uint16(len(k.KeyData)))
+	copy(out[99:], k.KeyData)
 	return out
 }
+
+// MICOffset is where the 16-byte MIC field starts in an encoded frame. The
+// MIC is computed over the whole frame with exactly these bytes zeroed.
+const MICOffset = 81
 
 // PairwiseMsg reports whether this is a pairwise (vs group) key frame.
 func (k *KeyFrame) Pairwise() bool { return k.KeyInfo&KeyInfoPairwise != 0 }
@@ -108,7 +138,10 @@ func (k *KeyFrame) Msg() int {
 	mic := k.KeyInfo&KeyInfoMIC != 0
 	sec := k.KeyInfo&KeyInfoSecure != 0
 	switch {
-	case ack && !mic && !sec:
+	// msg1 is the only AP->STA pairwise frame with no MIC (there is no PTK
+	// yet), so do not also require Secure to be clear: an AP that sets it
+	// still means msg1, and misreading it as "unknown" stalls the handshake.
+	case ack && !mic:
 		return 1
 	case !ack && mic && !sec:
 		return 2
@@ -216,9 +249,20 @@ func ComputeMIC(kck, frame []byte) []byte {
 }
 
 // VerifyMIC checks the frame's MIC against KCK.
+//
+// It MICs the bytes as received (k.Raw), not a re-encoding: the MIC covers the
+// frame from the 802.1X version byte onward, so any field we fail to reproduce
+// exactly — the version byte, a non-zero Reserved, trailing key-data padding —
+// would break the check on a frame that is actually valid.
 func VerifyMIC(kck []byte, k *KeyFrame) bool {
-	enc := k.Encode()
-	for i := 73; i < 89; i++ {
+	// Frames we originated have no Raw; for those Encode() is by definition
+	// the authoritative serialization, so it is safe to fall back to it.
+	src := k.Raw
+	if len(src) < keyFrameFixed {
+		src = k.Encode()
+	}
+	enc := append([]byte(nil), src...)
+	for i := MICOffset; i < MICOffset+16; i++ {
 		enc[i] = 0
 	}
 	mac := hmac.New(sha1.New, kck)
@@ -266,14 +310,40 @@ func UnwrapKey(kek, wrapped []byte) ([]byte, error) {
 	return out, nil
 }
 
-// GTK extracts the group temporal key from a msg3 key-data blob. For WPA2
-// the key data holds a GTK KDE (0xdd, OUI 00-0f-ac, type 1): the wrapped GTK
-// starts at keydata[8:].
-func GTK(KEK, keyData []byte) (gtk []byte, keyIdx uint8, err error) {
-	if len(keyData) < 10 || keyData[0] != 0xdd {
-		return nil, 0, fmt.Errorf("gtk: not a GTK KDE (%d bytes)", len(keyData))
+// ParseKeyData decrypts a msg3 Key Data field and returns the GTK it carries.
+//
+// Order matters and is the opposite of what the layout suggests: for key
+// descriptor version 2 the ENTIRE Key Data field is one AES-key-wrapped blob
+// (802.11-2016 12.7.2 j), so it must be unwrapped ONCE and only then parsed as
+// a KDE list. The GTK inside the GTK KDE is already plaintext — unwrapping it
+// again, or walking KDEs over the ciphertext, silently yields a wrong key that
+// installs cleanly and then fails to decrypt every broadcast frame.
+//
+// The plaintext is a KDE sequence: the AP's RSN IE (0x30), a GTK KDE
+// (0xdd, OUI 00-0f-ac, data type 1: keyid/tx byte, 1 reserved byte, then the
+// GTK), optionally an IGTK KDE, then 0xdd 0x00 padding.
+func ParseKeyData(kek, keyData []byte, encrypted bool) (gtk []byte, keyIdx uint8, err error) {
+	plain := keyData
+	if encrypted {
+		if plain, err = UnwrapKey(kek, keyData); err != nil {
+			return nil, 0, fmt.Errorf("key data unwrap: %w", err)
+		}
 	}
-	keyIdx = keyData[6] & 0x03
-	gtk, err = UnwrapKey(KEK, keyData[8:])
-	return gtk, keyIdx, err
+	for off := 0; off+2 <= len(plain); {
+		eid, elen := plain[off], int(plain[off+1])
+		if elen == 0 || off+2+elen > len(plain) {
+			break // 0xdd 0x00 pad, or a truncated element: stop cleanly.
+		}
+		body := plain[off+2 : off+2+elen]
+		if eid == 0xdd && len(body) >= 6 &&
+			body[0] == 0x00 && body[1] == 0x0f && body[2] == 0xac && body[3] == 0x01 {
+			gtk = append([]byte(nil), body[6:]...)
+			if len(gtk) != 16 {
+				return nil, 0, fmt.Errorf("gtk: unexpected length %d (want 16 for CCMP)", len(gtk))
+			}
+			return gtk, body[4] & 0x03, nil
+		}
+		off += 2 + elen
+	}
+	return nil, 0, fmt.Errorf("gtk: no GTK KDE in %d bytes of key data", len(plain))
 }
