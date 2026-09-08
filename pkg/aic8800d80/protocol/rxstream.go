@@ -19,8 +19,9 @@ func SetRxDebug(on bool) { rxDebug = on }
 const (
 	USBTypeCfg       = 0x10
 	USBTypeCfgCmdRsp = 0x11
-	rxHWHRDLens      = 60 // RX_HWHRD_LEN — data-frame hardware header
-	rxAlignment      = 4  // RX_ALIGNMENT
+	USBTypeDataCfm   = 0x12 // TX confirm: payload is u32 confirm ids
+	rxHWHRDLens      = 60   // RX_HWHRD_LEN — data-frame hardware header
+	rxAlignment      = 4    // RX_ALIGNMENT
 )
 
 // E2AMsgHeaderSize is the byte length of the RX ipc_e2a_msg header that

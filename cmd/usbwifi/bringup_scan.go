@@ -43,6 +43,8 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	dump := fs.Bool("dump", false, "hex-dump every received frame (raw diagnostics)")
 	prescan := fs.Bool("prescan", false, "issue a scan before --connect to populate the BSS list")
 	skipNet := fs.Bool("skip-net", false, "stop after association+EAPOL (skip DHCP/ping validation)")
+	txMsgPipe := fs.Bool("tx-msg-pipe", false, "send TX data (EAPOL/DHCP) on the command OUT pipe instead of the bulk data pipe")
+	txProbe := fs.Bool("tx-probe", false, "after association, send EAPOL-Logoff on first msg1 and count further retries (TX delivery test, no handshake)")
 	stack := fs.Bool("stack", false, "send MM_SET_STACK_START first — MANDATORY per the vendor driver but it "+
 		"disrupts the bulk pipes irrecoverably under macOS libusb (a kernel driver recovers them; we can't), "+
 		"so it is off by default; the radio still receives intermittently without it")
@@ -98,6 +100,9 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			case connIndCh <- ind:
 			default:
 			}
+		},
+		OnTxCfm: func(p []byte) {
+			fmt.Printf("  [TXCFM len=%d] % x\n", len(p), p)
 		},
 		OnDataFrame: func(p []byte) {
 			// EAPOL extractor: find ethertype 88 8e, then hand the clean
@@ -455,8 +460,11 @@ func runCmdBringup(ctx context.Context, args []string) int {
 					// path). Run the host supplicant: derive keys, answer
 					// msg1/msg3, install PTK/GTK, open the port — then
 					// DHCP + ping to prove the data path carries IP.
+					if *txProbe {
+						return runTxProbe(ctx, s, vif, ind.APIdx, ind.BSSID, mac, eapolCh, *txMsgPipe)
+					}
 					if wpa2 {
-						if rc := runEapolHandshake(ctx, s, vif, ind.APIdx, ind.BSSID, mac, *connectSSID, *connectPass, eapolCh); rc != 0 {
+						if rc := runEapolHandshake(ctx, s, vif, ind.APIdx, ind.BSSID, mac, *connectSSID, *connectPass, eapolCh, *txMsgPipe); rc != 0 {
 							return rc
 						}
 						if *skipNet {

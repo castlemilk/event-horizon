@@ -70,13 +70,24 @@ func (s *Session) BulkOut(_ context.Context, frame []byte) error {
 }
 
 // BulkOutData writes one TX data record (TxData.Encode, type 0x01) to the
-// first bulk OUT endpoint — the data pipe. LMAC commands use BulkOut (the
-// second OUT / msg pipe); data must NOT go there.
+// first bulk OUT endpoint — the data pipe per the reference driver.
 func (s *Session) BulkOutData(_ context.Context, frame []byte) error {
 	if s == nil || s.dev == nil {
 		return fmt.Errorf("session closed")
 	}
 	_, err := s.dev.BulkSend(s.dev.BulkOutEndpoint(), frame, 1000)
+	return err
+}
+
+// BulkOutDataMsg writes one TX data record to the second (command) OUT
+// endpoint instead. Normally wrong per the reference — but if the data pipe
+// is dead on this firmware while commands flow, this is the experiment that
+// proves where TX really goes.
+func (s *Session) BulkOutDataMsg(_ context.Context, frame []byte) error {
+	if s == nil || s.dev == nil {
+		return fmt.Errorf("session closed")
+	}
+	_, err := s.dev.BulkSend(s.dev.MsgOutEndpoint(), frame, 1000)
 	return err
 }
 

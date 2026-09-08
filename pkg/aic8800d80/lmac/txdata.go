@@ -39,6 +39,9 @@ type TxData struct {
 	VifIdx    uint8
 	StaIdx    uint8 // 0xFF = unknown station
 	Payload   []byte
+	// ConfirmIdx requests a TX confirm: status_desc_addr = bit31|idx and
+	// the firmware returns idx in a 0x12 DATA_CFM record. -1 = no confirm.
+	ConfirmIdx int
 }
 
 func (t *TxData) Encode() ([]byte, error) {
@@ -57,13 +60,18 @@ func (t *TxData) Encode() ([]byte, error) {
 	out[7] = 0x00
 	p := out[8 : 8+hostdescSize]
 	binary.LittleEndian.PutUint16(p[0:2], uint16(len(t.Payload))) // packet_len
-	// p[2:4] flags_ext = 0; p[4:8] status_desc_addr = 0 (no TX confirm)
+	// p[2:4] flags_ext = 0.
+	if t.ConfirmIdx >= 0 {
+		binary.LittleEndian.PutUint32(p[4:8], 0x80000000|uint32(t.ConfirmIdx))
+	}
+	// else status_desc_addr = 0 (no TX confirm)
 	copy(p[8:14], t.DA[:])
 	copy(p[14:20], t.SA[:])
 	// ethertype travels big-endian (rwnx_tx.c copies h_proto raw).
 	binary.BigEndian.PutUint16(p[20:22], t.Ethertype)
-	p[22] = 0    // ac
-	p[23] = 0xFF // tid: non-QoS
+	p[22] = 3 // ac = hardware queue: VO (EAPOL is voice-priority)
+	p[23] = 7 // tid 7 (voice): tid 0xFF marks non-QoS, which the
+	// firmware may refuse to transmit on a QoS association
 	p[24] = t.VifIdx
 	p[25] = t.StaIdx
 	// p[26:28] flags = 0

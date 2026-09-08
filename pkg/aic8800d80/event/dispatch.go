@@ -22,6 +22,9 @@ type Dispatch struct {
 	OnConnectCfm   func(status uint8)
 	OnConnectInd   func(lmac.ConnectInd)
 	OnAnyUnknown   func(msgID uint16, payload []byte)
+	// OnTxCfm, if set, receives TX-confirm payloads (USB record type 0x12:
+	// array of u32 confirm ids for hostdesc.status_desc_addr with bit31).
+	OnTxCfm func(payload []byte)
 	// OnRaw, if set, is called for every frame before typed routing —
 	// msgID 0xFFFF marks a data frame. For raw diagnostics.
 	OnRaw func(msgID uint16, payload []byte)

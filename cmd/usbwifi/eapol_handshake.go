@@ -18,9 +18,81 @@ import (
 // data path by the OnDataFrame hook); replies go out as TX data records on
 // the bulk data pipe. On success it installs the PTK/GTK via MM_KEY_ADD and
 // opens the controlled port, returning 0.
-func runEapolHandshake(ctx context.Context, s *session, vif, apIdx uint8, bssid, staMAC [6]byte, ssid, passphrase string, eapolCh <-chan []byte) int {
+// runTxProbe tests raw TX delivery without any crypto: after association,
+// wait for the first msg1, then send EAPOL-Logoff (type 2, no MIC) and watch
+// whether the AP stops its msg1 retries. Retries stopping early proves our
+// TX frames reach the AP (problem = msg2 content); identical retries prove
+// TX is broken.
+func runTxProbe(ctx context.Context, s *session, vif, apIdx uint8, bssid, staMAC [6]byte, eapolCh <-chan []byte, txOnMsgPipe bool) int {
+	fmt.Println("  TXPROBE: waiting for first msg1 ...")
+	deadline := time.After(30 * time.Second)
+	for {
+		select {
+		case f := <-eapolCh:
+			var k lmac.KeyFrame
+			if err := k.Decode(f); err != nil {
+				continue
+			}
+			if !k.Pairwise() || k.Msg() != 1 {
+				continue
+			}
+			fmt.Printf("  TXPROBE: got msg1 (replay %d), sending EAPOL-Logoff ...\n", k.Replay)
+			// 802.1X Logoff: ver=1, type=2, len=0.
+			logoff := []byte{1, 2, 0, 0}
+			tx := &lmac.TxData{DA: bssid, SA: staMAC,
+				Ethertype: lmac.EAPOLEthertype, VifIdx: vif, StaIdx: apIdx,
+				Payload: logoff, ConfirmIdx: -1}
+			frame, err := tx.Encode()
+			if err != nil {
+				return 1
+			}
+			if txOnMsgPipe {
+				err = s.sess.BulkOutDataMsg(ctx, frame)
+			} else {
+				err = s.sess.BulkOutData(ctx, frame)
+			}
+			if err != nil {
+				fmt.Printf("  TXPROBE: logoff send failed: %v\n", err)
+				return 1
+			}
+			fmt.Println("  TXPROBE: logoff sent; watching 25s for further msg1 ...")
+			end := time.After(25 * time.Second)
+			n := 0
+			for {
+				select {
+				case f2 := <-eapolCh:
+					var k2 lmac.KeyFrame
+					if err := k2.Decode(f2); err == nil && k2.Pairwise() && k2.Msg() == 1 {
+						n++
+						fmt.Printf("  TXPROBE: post-logoff msg1 #%d (replay %d)\n", n, k2.Replay)
+					}
+				case <-end:
+					fmt.Printf("  TXPROBE: done, %d msg1 after logoff\n", n)
+					return 0
+				case <-ctx.Done():
+					return 1
+				}
+			}
+		case <-deadline:
+			fmt.Println("  TXPROBE: no msg1 within 30s")
+			return 1
+		case <-ctx.Done():
+			return 1
+		}
+	}
+}
+
+func runEapolHandshake(ctx context.Context, s *session, vif, apIdx uint8, bssid, staMAC [6]byte, ssid, passphrase string, eapolCh <-chan []byte, txOnMsgPipe bool) int {
 	fmt.Printf("  EAPOL: vif=%d apidx=%d sta=%02x:%02x:%02x:%02x:%02x:%02x\n",
 		vif, apIdx, staMAC[0], staMAC[1], staMAC[2], staMAC[3], staMAC[4], staMAC[5])
+	// Nonstandard but cheap: open the controlled port BEFORE the handshake
+	// in case this firmware gates host TX data (even EAPOL) on it.
+	{
+		c, cancel := context.WithTimeout(ctx, 4*time.Second)
+		err := s.submitter.Submit(c, lmac.SetControlPortReq{StaIdx: apIdx, Open: true})
+		cancel()
+		fmt.Printf("  EAPOL: pre-open control port err=%v\n", err)
+	}
 	pmk := lmac.PMK(passphrase, ssid)
 	fmt.Println("  EAPOL: PMK derived, waiting up to 30s for msg1 ...")
 
@@ -59,11 +131,13 @@ waitMsg1:
 	ptk := lmac.PTK(pmk, bssid[:], staMAC[:], msg1.Nonce[:], sNonce[:])
 	kck := ptk[:16]
 	kek := ptk[16:32]
+	useMsgPipe := txOnMsgPipe
 	fmt.Printf("  EAPOL: PTK derived (replay %d), sending msg2 ...\n", msg1.Replay)
+	fmt.Printf("  EAPOL: ANonce %x\n  EAPOL: SNonce %x\n", msg1.Nonce, sNonce)
 
 	msg2 := &lmac.KeyFrame{
 		KeyInfo: lmac.KeyInfoVerHMACSHA1 | lmac.KeyInfoPairwise | lmac.KeyInfoMIC,
-		KeyLen:  0, // M2 carries no key, only the RSN IE
+		KeyLen:  msg1.KeyLen, // echo the cipher key length (16 for CCMP)
 		Replay:  msg1.Replay,
 		KeyData: append([]byte(nil), lmac.WPA2PSKCCMPRsnIE...),
 	}
@@ -75,19 +149,35 @@ waitMsg1:
 		}
 		mic := lmac.ComputeMIC(kck, enc)
 		copy(k.MIC[:], mic)
+		if k.KeyInfo&lmac.KeyInfoPairwise != 0 && k.Msg() == 2 {
+			fmt.Printf("  EAPOL: msg2 frame %x\n", k.Encode())
+		}
 		tx := &lmac.TxData{
-			DA:        bssid,
-			SA:        staMAC,
-			Ethertype: lmac.EAPOLEthertype,
-			VifIdx:    vif,
-			StaIdx:    apIdx,
-			Payload:   k.Encode(),
+			DA:         bssid,
+			SA:         staMAC,
+			Ethertype:  lmac.EAPOLEthertype,
+			VifIdx:     vif,
+			StaIdx:     apIdx,
+			Payload:    k.Encode(),
+			ConfirmIdx: -1,
 		}
 		frame, err := tx.Encode()
 		if err != nil {
 			return err
 		}
-		return s.sess.BulkOutData(ctx, frame)
+		// Alternate the TX pipe across retries to isolate which pipe (if
+		// either) the firmware actually transmits from.
+		pipe := "bulk-out"
+		if useMsgPipe {
+			pipe = "msg-out"
+			err = s.sess.BulkOutDataMsg(ctx, frame)
+		} else {
+			err = s.sess.BulkOutData(ctx, frame)
+		}
+		useMsgPipe = !useMsgPipe
+		fmt.Printf("  EAPOL: msg%d sent via %s (%d bytes, err=%v)\n", k.Msg(), pipe, len(frame), err)
+		fmt.Printf("  EAPOL: tx record %x\n", frame)
+		return err
 	}
 	if err := sendEapol(msg2); err != nil {
 		log.Printf("send msg2: %v", err)

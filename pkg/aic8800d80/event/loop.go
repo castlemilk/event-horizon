@@ -47,6 +47,13 @@ func (l *Loop) Run(ctx context.Context) error {
 			// EOF / closed source / ctx cancellation = clean exit.
 			return nil
 		}
+		if f.Type == protocol.USBTypeDataCfm {
+			// TX confirm: payload is u32 confirm ids, not an ipc_e2a_msg.
+			if d, ok := l.sink.(*Dispatch); ok && d != nil && d.OnTxCfm != nil {
+				d.OnTxCfm(f.Payload)
+			}
+			continue
+		}
 		if !f.IsConfig() {
 			if l.sink != nil && len(f.Payload) >= 24 {
 				_ = l.sink.Handle(ctx, 0xFFFF, f.Payload)
