@@ -74,9 +74,14 @@ const (
 	MMSetStackStartCfm uint16 = 0x007C
 	MMGetFwVersionReq  uint16 = 0x0082 // ordinal 130
 	MMGetFwVersionCfm  uint16 = 0x0083
-	MMKeyAddReq        uint16 = 0x0025 // ordinal 37
-	MMKeyAddCfm        uint16 = 0x0026
-	MMKeyDelReq        uint16 = 0x0027 // ordinal 39
+	// Key messages, verified against the vendor Windows driver
+	// (aicusbwifi.Sys): key-install fn builds REQ 0x24 expecting CFM
+	// 0x25; key-delete builds REQ 0x26 expecting CFM 0x27. Sending 0x25
+	// as the REQ (the CFM id) is silently ignored.
+	MMKeyAddReq uint16 = 0x0024
+	MMKeyAddCfm uint16 = 0x0025
+	MMKeyDelReq uint16 = 0x0026
+	MMKeyDelCfm uint16 = 0x0027
 )
 
 // SM (station management) task messages (TASK_SM = 6).
@@ -122,6 +127,10 @@ const (
 	MEConfigCfm     uint16 = 0x1401
 	MEChanConfigReq uint16 = 0x1402
 	MEChanConfigCfm uint16 = 0x1403
+	// ME_SET_CONTROL_PORT opens/closes the 802.1X controlled port for a
+	// station (struct me_set_control_port_req: sta_idx@0, open@1).
+	MESetControlPortReq uint16 = 0x1404
+	MESetControlPortCfm uint16 = 0x1405
 )
 
 // SCANU task messages (TASK_SCANU = 4). SCANU is the user-space-initiated

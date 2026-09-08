@@ -129,10 +129,12 @@ func (c *ConnectInd) Decode(payload []byte) error {
 	copy(c.BSSID[:], payload[2:8])
 	c.VifIdx = payload[9]
 	c.APIdx = payload[10]
-	if len(payload) >= 826 {
-		c.AID = binary.LittleEndian.Uint16(payload[820:822])
-		c.Band = payload[822]
-		c.CenterFreq = binary.LittleEndian.Uint16(payload[824:826])
+	// Tail after the 800-byte assoc IE buffer (offsets from the compiled
+	// reference struct): aid@818, band@820, center_freq@822 (u16-aligned).
+	if len(payload) >= 824 {
+		c.AID = binary.LittleEndian.Uint16(payload[818:820])
+		c.Band = payload[820]
+		c.CenterFreq = binary.LittleEndian.Uint16(payload[822:824])
 	}
 	return nil
 }

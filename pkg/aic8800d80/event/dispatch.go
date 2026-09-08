@@ -25,6 +25,10 @@ type Dispatch struct {
 	// OnRaw, if set, is called for every frame before typed routing —
 	// msgID 0xFFFF marks a data frame. For raw diagnostics.
 	OnRaw func(msgID uint16, payload []byte)
+	// OnDataFrame, if set, is called for every 0xFFFF data-frame payload
+	// (EAPOL, beacons-as-data, wrapped SM). Used by the WPA2 supplicant to
+	// capture EAPOL key frames arriving on the data path.
+	OnDataFrame func(payload []byte)
 }
 
 func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error {
@@ -33,6 +37,9 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 	}
 	switch msgID {
 	case 0xFFFF:
+		if d.OnDataFrame != nil {
+			d.OnDataFrame(payload)
+		}
 		// This firmware wraps config responses (SM_CONNECT_CFM/IND) inside a
 		// data-typed frame: [0x11 0x00][id:2][dest:2][src:2][param_len:2]
 		// [pattern:4][param...]. Scan for the SM connect messages and route them.

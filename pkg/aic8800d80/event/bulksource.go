@@ -37,32 +37,65 @@ type bulkFrameSource struct {
 	// only between dispatches (the previous design) dropped every frame that
 	// arrived while a frame was being processed, which is why a scan reported
 	// only 1-3 of the BSSes actually on air.
-	once     sync.Once
-	bulkCh   chan []byte
-	msgCh    chan []byte
-	readerWG sync.Once
+	once   sync.Once
+	bulkCh chan []byte
+	msgCh  chan []byte
+
+	// Pump lifecycle. The pumps block in libusb_bulk_transfer, so Stop must
+	// wait them out: libusb_exit with a transfer in flight segfaults
+	// (observed SIGSEGV in libusb_exit at teardown).
+	wg       sync.WaitGroup
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 // startReaders launches the background pump exactly once.
 func (s *bulkFrameSource) startReaders() {
 	s.bulkCh = make(chan []byte, 256)
+	s.done = make(chan struct{})
 	pump := func(read func([]byte, int) (int, error), out chan []byte) {
+		defer s.wg.Done()
 		for {
+			select {
+			case <-s.done:
+				return
+			default:
+			}
 			buf := make([]byte, 4096)
 			n, err := read(buf, s.timeoutMs)
+			select {
+			case <-s.done:
+				return
+			default:
+			}
 			if err == nil && n > 0 {
 				select {
 				case out <- buf[:n]:
+				case <-s.done:
+					return
 				default: // consumer behind; drop oldest-style backpressure
 				}
 			}
 		}
 	}
+	s.wg.Add(1)
 	go pump(s.dev.BulkIn, s.bulkCh)
 	if s.hasMsg {
 		s.msgCh = make(chan []byte, 256)
+		s.wg.Add(1)
 		go pump(s.dev.MsgIn, s.msgCh)
 	}
+}
+
+// Stop halts the pumps and waits until no bulk transfer is in flight. It
+// must be called before the libusb context is torn down.
+func (s *bulkFrameSource) Stop() {
+	s.stopOnce.Do(func() {
+		if s.done != nil {
+			close(s.done)
+		}
+	})
+	s.wg.Wait()
 }
 
 func (s *bulkFrameSource) Next(ctx context.Context) (protocol.RxFrame, error) {

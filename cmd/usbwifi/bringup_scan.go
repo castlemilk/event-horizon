@@ -62,6 +62,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	connCfmCh := make(chan uint8, 4)
 	connIndCh := make(chan lmac.ConnectInd, 4)
 	memReadCh := make(chan []byte, 4)
+	eapolCh := make(chan []byte, 16)
 
 	d := &event.Dispatch{
 		OnResetCfm: func() { fmt.Println("  MM_RESET_CFM ok") },
@@ -91,6 +92,31 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			select {
 			case connIndCh <- ind:
 			default:
+			}
+		},
+		OnDataFrame: func(p []byte) {
+			// EAPOL extractor: find ethertype 88 8e, then hand the clean
+			// 802.1X frame (ver/type/len + descriptor) to the supplicant.
+			// The firmware delivers RX data with an hw header, so scan
+			// rather than assuming an offset.
+			for i := 0; i+8 <= len(p); i++ {
+				if p[i] != 0x88 || p[i+1] != 0x8e {
+					continue
+				}
+				e := p[i+2:]
+				if len(e) < 4 || (e[0] != 1 && e[0] != 2) ||
+					(e[1] != 0 && e[1] != 1 && e[1] != 3) {
+					continue
+				}
+				bodyLen := int(e[2])<<8 | int(e[3])
+				if len(e) < 4+bodyLen {
+					continue
+				}
+				select {
+				case eapolCh <- append([]byte(nil), e[:4+bodyLen]...):
+				default:
+				}
+				return
 			}
 		},
 		OnRaw: func(msgID uint16, p []byte) {
@@ -247,7 +273,11 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		}
 		return 0, false
 	}
-	if base, ok := readMem(0x00110180); ok && base != 0 && base != 0xffffffff {
+	// Guard: 0x110180 reads junk (e.g. 0x45592b00/0x55592b00) until the
+	// firmware populates it later in init than we run. Writing the table
+	// to a junk base sprays registers into unmapped RAM and wedges tasks
+	// nondeterministically — only apply inside plausible firmware RAM.
+	if base, ok := readMem(0x00110180); ok && base >= 0x00100000 && base < 0x00220000 {
 		fmt.Printf("  patch_config base = 0x%08x\n", base)
 		for _, w := range []struct {
 			off, val uint32
@@ -415,6 +445,13 @@ func runCmdBringup(ctx context.Context, args []string) int {
 					fmt.Printf("CONNECTED to %q: bssid=%02x:%02x:%02x:%02x:%02x:%02x aid=%d band=%d freq=%d\n",
 						*connectSSID, ind.BSSID[0], ind.BSSID[1], ind.BSSID[2], ind.BSSID[3], ind.BSSID[4], ind.BSSID[5],
 						ind.AID, ind.Band, ind.CenterFreq)
+					// Association done. With CONTROL_PORT_HOST the AP now
+					// starts the EAPOL 4-way handshake (msg1 on the data
+					// path). Run the host supplicant: derive keys, answer
+					// msg1/msg3, install PTK/GTK, open the port.
+					if wpa2 {
+						return runEapolHandshake(ctx, s, vif, ind.APIdx, ind.BSSID, mac, *connectSSID, *connectPass, eapolCh)
+					}
 					return 0
 				}
 				fmt.Printf("association FAILED: status_code=%d\n", ind.StatusCode)

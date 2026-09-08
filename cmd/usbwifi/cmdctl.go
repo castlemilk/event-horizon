@@ -150,7 +150,8 @@ func openSessionWith(ctx context.Context, d *event.Dispatch) (*session, error) {
 	return s, nil
 }
 
-// close stops the loop and releases the USB session.
+// close stops the loop, halts the RX pumps (so no bulk transfer is in
+// flight), and releases the USB session.
 func (s *session) close() {
 	if s.cancel != nil {
 		s.cancel()
@@ -161,6 +162,9 @@ func (s *session) close() {
 		case <-time.After(3 * time.Second):
 			log.Printf("event loop did not stop within 3s; releasing device anyway")
 		}
+	}
+	if s.loop != nil {
+		s.loop.Stop()
 	}
 	s.sess.Close()
 }
@@ -181,6 +185,14 @@ func (t *ackTeeSource) Next(ctx context.Context) (protocol.RxFrame, error) {
 		}
 	}
 	return f, err
+}
+
+// Stop delegates to the inner source so the pumps halt before libusb_exit
+// (a mid-flight bulk read + libusb_exit segfaults).
+func (t *ackTeeSource) Stop() {
+	if st, ok := t.inner.(event.Stopper); ok {
+		st.Stop()
+	}
 }
 
 func bandName(b uint8) string {
@@ -358,6 +370,7 @@ func runCmdListen(ctx context.Context, args []string) int {
 	case <-done:
 	case <-time.After(2 * time.Second):
 	}
+	loop.Stop()
 
 	ids := make([]uint16, 0, len(counts))
 	for id := range counts {

@@ -20,6 +20,19 @@ type Loop struct {
 	sink Sink
 }
 
+// Stopper is implemented by frame sources with background activity that
+// must be halted before the USB session is torn down.
+type Stopper interface {
+	Stop()
+}
+
+// Stop propagates a halt to the frame source, if it supports it.
+func (l *Loop) Stop() {
+	if st, ok := l.src.(Stopper); ok {
+		st.Stop()
+	}
+}
+
 // NewLoop creates a Loop.
 func NewLoop(src FrameSource, sink Sink) *Loop {
 	return &Loop{src: src, sink: sink}

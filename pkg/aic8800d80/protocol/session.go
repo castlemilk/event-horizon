@@ -69,6 +69,17 @@ func (s *Session) BulkOut(_ context.Context, frame []byte) error {
 	return err
 }
 
+// BulkOutData writes one TX data record (TxData.Encode, type 0x01) to the
+// first bulk OUT endpoint — the data pipe. LMAC commands use BulkOut (the
+// second OUT / msg pipe); data must NOT go there.
+func (s *Session) BulkOutData(_ context.Context, frame []byte) error {
+	if s == nil || s.dev == nil {
+		return fmt.Errorf("session closed")
+	}
+	_, err := s.dev.BulkSend(s.dev.BulkOutEndpoint(), frame, 1000)
+	return err
+}
+
 // BulkIn reads one chunk from the bulk IN endpoint into buf. Returns the
 // number of bytes received.
 func (s *Session) BulkIn(buf []byte, timeoutMs int) (int, error) {
