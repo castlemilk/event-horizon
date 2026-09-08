@@ -143,8 +143,9 @@ waitMsg1:
 	}
 	copy(msg2.Nonce[:], sNonce[:])
 	sendEapol := func(k *lmac.KeyFrame) error {
+		k.MIC = [16]byte{} // a resend must not MIC over the previous MIC
 		enc := k.Encode()
-		for i := 73; i < 89 && i < len(enc); i++ {
+		for i := lmac.MICOffset; i < lmac.MICOffset+16 && i < len(enc); i++ {
 			enc[i] = 0
 		}
 		mic := lmac.ComputeMIC(kck, enc)
@@ -230,7 +231,11 @@ waitMsg1:
 haveMsg3:
 
 	// --- GTK ---
-	gtk, gtkIdx, err := extractGTK(kek, msg3.KeyData)
+	// msg3's whole Key Data field is one AES-key-wrapped blob: unwrap once,
+	// then parse the plaintext KDE list. Walking KDEs over the ciphertext
+	// finds nothing and silently yields a wrong key.
+	gtk, gtkIdx, err := lmac.ParseKeyData(kek, msg3.KeyData,
+		msg3.KeyInfo&lmac.KeyInfoEncrypted != 0)
 	if err != nil {
 		fmt.Printf("  EAPOL: GTK extract failed: %v (keydatalen=%d)\n", err, len(msg3.KeyData))
 		return 1
@@ -260,44 +265,24 @@ haveMsg3:
 		fmt.Printf("  %s: CFM ok\n", name)
 		return true
 	}
-	submitKey("mm_key_add PTK", &lmac.KeyAddReq{
+	okPTK := submitKey("mm_key_add PTK", &lmac.KeyAddReq{
 		KeyIdx: 0, StaIdx: apIdx, Key: append([]byte(nil), tk...),
 		Cipher: lmac.CipherCCMP, VifIdx: vif, Pairwise: true,
 	})
-	submitKey("mm_key_add GTK", &lmac.KeyAddReq{
+	okGTK := submitKey("mm_key_add GTK", &lmac.KeyAddReq{
 		KeyIdx: gtkIdx, StaIdx: 0xFF, Key: gtk,
 		Cipher: lmac.CipherCCMP, VifIdx: vif, Pairwise: false,
 	})
-	submitKey("me_set_control_port open", lmac.SetControlPortReq{StaIdx: apIdx, Open: true})
+	okPort := submitKey("me_set_control_port open", lmac.SetControlPortReq{StaIdx: apIdx, Open: true})
 
+	// Report what actually happened. Claiming an open port on the strength of
+	// three unchecked return values is the same failure this project already
+	// fixed once for associations that never happened.
+	if !okPTK || !okGTK || !okPort {
+		fmt.Printf("  EAPOL: key install FAILED (ptk=%v gtk=%v port=%v) — controlled port NOT open\n",
+			okPTK, okGTK, okPort)
+		return 1
+	}
 	fmt.Println("  EAPOL: handshake complete — controlled port open")
 	return 0
-}
-
-// extractGTK walks the msg3 key-data KDEs to the GTK KDE
-// (0xdd, OUI 00-0f-ac, data-type 1) and unwraps it with KEK.
-func extractGTK(kek, keyData []byte) ([]byte, uint8, error) {
-	for off := 0; off+2 <= len(keyData); {
-		eid, elen := keyData[off], int(keyData[off+1])
-		if off+2+elen > len(keyData) {
-			break
-		}
-		body := keyData[off+2 : off+2+elen]
-		if eid == 0xdd && len(body) >= 8 &&
-			body[0] == 0x00 && body[1] == 0x0f && body[2] == 0xac && body[3] == 0x01 {
-			keyIdx := body[4] & 0x03
-			gtk, err := lmac.UnwrapKey(kek, body[6:])
-			if err != nil {
-				return nil, 0, err
-			}
-			return gtk, keyIdx, nil
-		}
-		off += 2 + elen
-	}
-	// Fallback: the whole blob may be just the wrapped GTK.
-	gtk, err := lmac.UnwrapKey(kek, keyData)
-	if err != nil {
-		return nil, 0, fmt.Errorf("no GTK KDE found and raw unwrap failed: %w", err)
-	}
-	return gtk, 0, nil
 }
