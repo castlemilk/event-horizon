@@ -63,7 +63,7 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 						d.OnConnectCfm(payload[paramOff])
 					}
 				case lmac.SMConnectInd:
-					if plen == 852 && d.OnConnectInd != nil {
+					if plen == lmac.ConnectIndSize && d.OnConnectInd != nil {
 						end := paramOff + plen
 						if end > len(payload) {
 							end = len(payload)

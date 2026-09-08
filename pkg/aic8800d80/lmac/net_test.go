@@ -80,18 +80,32 @@ func TestDHCPRoundTrip(t *testing.T) {
 	}
 }
 
-func TestExtractEthernet(t *testing.T) {
+// This test used to assert the opposite: that a bare Ethernet frame sat behind
+// a 60-byte hardware header, and that a free-floating scan should find one at
+// any offset. Both were wrong. The firmware delivers an 802.11 MPDU at
+// RxMSDUOffset, never an Ethernet header, and the scan-for-a-plausible-header
+// approach is what silently turned 802.11 headers into garbage — it produced a
+// "scan result" whose BSSID was a duration field followed by our own MAC, and
+// it made every DHCP offer undecodable.
+//
+// The positive cases now live in rx80211_test.go; what belongs here is the
+// guarantee that the discredited shapes are REJECTED rather than half-decoded.
+func TestExtractEthernetRejectsBareEthernet(t *testing.T) {
 	ourMAC := [6]byte{0x02, 0x11, 0x22, 0x33, 0x44, 0x55}
 	eth := (&Ethernet{DA: ourMAC, SA: [6]byte{0xd2, 0xe8, 0xf0, 0x50, 0xf8, 0x32},
 		Ethertype: EtherTypeIP, Payload: []byte{0x45, 0, 0, 20}}).Encode()
-	padded := append(make([]byte, 60), eth...) // behind a 60B hw header
-	e, off, err := ExtractEthernet(padded, ourMAC)
-	if err != nil || off != 60 || e.Ethertype != EtherTypeIP {
-		t.Fatalf("extract: off=%d err=%v", off, err)
-	}
-	// Offset-free search: header at an odd offset.
-	shifted := append(make([]byte, 47), eth...)
-	if _, off, err := ExtractEthernet(shifted, ourMAC); err != nil || off != 47 {
-		t.Fatalf("extract shifted: off=%d err=%v", off, err)
+
+	for _, tc := range []struct {
+		name string
+		pad  int
+	}{
+		{"bare Ethernet behind a 60-byte header", 60},
+		{"Ethernet at an arbitrary offset", 47},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, _, err := ExtractEthernet(append(make([]byte, tc.pad), eth...), ourMAC); err == nil {
+				t.Error("decoded a frame that is not an 802.11 data MPDU")
+			}
+		})
 	}
 }

@@ -111,11 +111,19 @@ func (r *ConnectReq) Encode() ([]byte, error) {
 
 // ConnectInd is SM_CONNECT_IND (struct sm_connect_ind, 852 bytes). We decode
 // the fields we act on; the association IE buffer is left unparsed.
+// ConnectIndSize is sizeof(struct sm_connect_ind) on the firmware's 32-bit
+// little-endian target, and the param_len the firmware reports for it.
+const ConnectIndSize = 852
+
 type ConnectInd struct {
 	StatusCode uint16
 	BSSID      [6]byte
+	Roamed     bool
 	VifIdx     uint8
+	// APIdx is the AP's station index. It is the sta_idx for MM_KEY_ADD and
+	// for every outbound data frame's hostdesc, so it is load-bearing.
 	APIdx      uint8
+	ChIdx      uint8
 	AID        uint16
 	Band       uint8
 	CenterFreq uint16
@@ -127,14 +135,29 @@ func (c *ConnectInd) Decode(payload []byte) error {
 	}
 	c.StatusCode = binary.LittleEndian.Uint16(payload[0:2])
 	copy(c.BSSID[:], payload[2:8])
+	c.Roamed = payload[8] != 0
 	c.VifIdx = payload[9]
 	c.APIdx = payload[10]
-	// Tail after the 800-byte assoc IE buffer (offsets from the compiled
-	// reference struct): aid@818, band@820, center_freq@822 (u16-aligned).
-	if len(payload) >= 824 {
-		c.AID = binary.LittleEndian.Uint16(payload[818:820])
-		c.Band = payload[820]
-		c.CenterFreq = binary.LittleEndian.Uint16(payload[822:824])
+	c.ChIdx = payload[11]
+	// Tail after the assoc IE buffer. The layout is fixed by two compiler-forced
+	// pads: 2 bytes at 18..19, because `u32_l assoc_ie_buf[200]` is 4-aligned
+	// (which is what puts the IE buffer at 20 and ends it at 820), and 1 byte at
+	// 823, because center_freq is a 2-aligned u16. Hence aid@820, band@822,
+	// center_freq@824, and sizeof == 852 — matching the param_len the firmware
+	// actually reports.
+	//
+	// NEGATIVE RESULT: these were once "corrected" to 818/820/822 with a >= 824
+	// guard. That is wrong — it assumes assoc_ie_buf starts at 18, which no C
+	// compiler can produce — and it made every run print aid=0 band=0 freq=0.
+	if len(payload) < ConnectIndSize {
+		// The dispatcher gates on param_len == ConnectIndSize, so a short
+		// payload here means it was clipped in transit. Say so rather than
+		// silently reporting zeros for aid/band/freq.
+		return fmt.Errorf("connect ind: truncated (%d < %d), tail fields unavailable",
+			len(payload), ConnectIndSize)
 	}
+	c.AID = binary.LittleEndian.Uint16(payload[820:822])
+	c.Band = payload[822]
+	c.CenterFreq = binary.LittleEndian.Uint16(payload[824:826])
 	return nil
 }
