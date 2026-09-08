@@ -42,6 +42,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	connectBSSID := fs.String("connect-bssid", "", "target a specific BSSID (aa:bb:cc:dd:ee:ff) — required style for HIDDEN APs, which do not answer a broadcast-BSSID probe")
 	dump := fs.Bool("dump", false, "hex-dump every received frame (raw diagnostics)")
 	prescan := fs.Bool("prescan", false, "issue a scan before --connect to populate the BSS list")
+	skipNet := fs.Bool("skip-net", false, "stop after association+EAPOL (skip DHCP/ping validation)")
 	stack := fs.Bool("stack", false, "send MM_SET_STACK_START first — MANDATORY per the vendor driver but it "+
 		"disrupts the bulk pipes irrecoverably under macOS libusb (a kernel driver recovers them; we can't), "+
 		"so it is off by default; the radio still receives intermittently without it")
@@ -55,6 +56,9 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		results []lmac.ScanResultInd
 		seen    = map[[6]byte]bool{}
 	)
+	// Fallback station MAC if the device does not return one. Declared
+	// before the dispatch so the data-frame hook can anchor Ethernet.
+	mac := [6]byte{0x02, 0x11, 0x22, 0x33, 0x44, 0x55}
 	vifCh := make(chan lmac.AddIfCfm, 4)
 	startCfmCh := make(chan lmac.ScanStartCfm, 4)
 	doneCh := make(chan struct{}, 1)
@@ -63,6 +67,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	connIndCh := make(chan lmac.ConnectInd, 4)
 	memReadCh := make(chan []byte, 4)
 	eapolCh := make(chan []byte, 16)
+	netCh := make(chan lmac.Ethernet, 32)
 
 	d := &event.Dispatch{
 		OnResetCfm: func() { fmt.Println("  MM_RESET_CFM ok") },
@@ -117,6 +122,15 @@ func runCmdBringup(ctx context.Context, args []string) int {
 				default:
 				}
 				return
+			}
+			// Non-EAPOL data (DHCP/ARP/IP post-handshake): anchor an
+			// Ethernet frame and forward it to the network validator.
+			if eth, _, err := lmac.ExtractEthernet(p, mac); err == nil &&
+				eth.Ethertype != lmac.EAPOLEthertype {
+				select {
+				case netCh <- eth:
+				default:
+				}
 			}
 		},
 		OnRaw: func(msgID uint16, p []byte) {
@@ -209,9 +223,6 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		return 1
 	}
 	defer s.close()
-
-	// Fallback station MAC if the device does not return one.
-	mac := [6]byte{0x02, 0x11, 0x22, 0x33, 0x44, 0x55}
 
 	// RF/stack-start sequence with the CORRECTED message ids. rf_calib (0x006B)
 	// is confirmed working; testing the rest with per-message reporting and
@@ -448,9 +459,16 @@ func runCmdBringup(ctx context.Context, args []string) int {
 					// Association done. With CONTROL_PORT_HOST the AP now
 					// starts the EAPOL 4-way handshake (msg1 on the data
 					// path). Run the host supplicant: derive keys, answer
-					// msg1/msg3, install PTK/GTK, open the port.
+					// msg1/msg3, install PTK/GTK, open the port — then
+					// DHCP + ping to prove the data path carries IP.
 					if wpa2 {
-						return runEapolHandshake(ctx, s, vif, ind.APIdx, ind.BSSID, mac, *connectSSID, *connectPass, eapolCh)
+						if rc := runEapolHandshake(ctx, s, vif, ind.APIdx, ind.BSSID, mac, *connectSSID, *connectPass, eapolCh); rc != 0 {
+							return rc
+						}
+						if *skipNet {
+							return 0
+						}
+						return runDhcpPing(ctx, s, vif, mac, ind.BSSID, netCh)
 					}
 					return 0
 				}
