@@ -131,7 +131,6 @@ waitMsg1:
 	ptk := lmac.PTK(pmk, bssid[:], staMAC[:], msg1.Nonce[:], sNonce[:])
 	kck := ptk[:16]
 	kek := ptk[16:32]
-	useMsgPipe := txOnMsgPipe
 	fmt.Printf("  EAPOL: PTK derived (replay %d), sending msg2 ...\n", msg1.Replay)
 	fmt.Printf("  EAPOL: ANonce %x\n  EAPOL: SNonce %x\n", msg1.Nonce, sNonce)
 
@@ -165,16 +164,21 @@ waitMsg1:
 		if err != nil {
 			return err
 		}
-		// Alternate the TX pipe across retries to isolate which pipe (if
-		// either) the firmware actually transmits from.
+		// SETTLED: data frames go out the bulk data pipe. The old code
+		// ALTERNATED pipes per send to work out which one transmitted; once the
+		// record framing was fixed that hack became the bug. msg2 went out
+		// bulk-out and was confirmed (TXCFM) and answered (msg3), then msg4 was
+		// toggled onto the msg pipe, vanished, and the AP timed the handshake
+		// out with SM_DISCONNECT_IND reason 15 — after we had already reported
+		// "controlled port open". Keep --tx-msg-pipe as an explicit override,
+		// but never alternate.
 		pipe := "bulk-out"
-		if useMsgPipe {
+		if txOnMsgPipe {
 			pipe = "msg-out"
 			err = s.sess.BulkOutDataMsg(ctx, frame)
 		} else {
 			err = s.sess.BulkOutData(ctx, frame)
 		}
-		useMsgPipe = !useMsgPipe
 		fmt.Printf("  EAPOL: msg%d sent via %s (%d bytes, err=%v)\n", k.Msg(), pipe, len(frame), err)
 		fmt.Printf("  EAPOL: tx record %x\n", frame)
 		return err
