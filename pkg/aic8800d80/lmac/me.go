@@ -20,7 +20,19 @@ func (r ConfigReq) Encode() ([]byte, error) {
 	buf := make([]byte, HeaderSize+meConfigSize)
 	Header{ID: MEConfigReq, DestID: uint16(TaskME), SrcID: DRVTaskID, ParamLen: meConfigSize}.Encode(buf)
 	p := buf[HeaderSize:]
-	// ht_cap[0:32], vht_cap[32:44], he_cap[44:100] all left zero.
+	// ht_cap (struct mac_htcapability, 32 bytes @0): a zeroed HT IE in the
+	// association request risks the AP dropping it silently, so advertise a
+	// real 1-stream 20MHz HT station when HTSupported.
+	if r.HTSupported {
+		// ht_capa_info u16 @0: LDPC | SMPS-disabled | SGI20 | RX-STBC 1SS |
+		// 40MHz-intolerant (we associate 20MHz).
+		p[0] = 0x2D
+		p[1] = 0x41 // 0x412D
+		p[2] = 0x1B // a_mpdu_param: 64K max, 16us density
+		p[3] = 0xFF // mcs_rate[0]: MCS 0-7 RX
+		// mcs_rate[1:16] = 0 (single stream); ht_extended/tx_bf/asel = 0.
+	}
+	// vht_cap[32:44], he_cap[44:100] left zero (no VHT/HE on this 20MHz STA).
 	// tx_lft (u16 @100) = 0 (no BlockAck lifetime limit).
 	// phy_bw_max (u8 @102) = 0 (20 MHz).
 	if r.HTSupported {

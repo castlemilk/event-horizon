@@ -435,20 +435,14 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			log.Printf("send sm_connect_req: %v", err)
 			return 1
 		}
-		fmt.Println("  SM_CONNECT_REQ sent; waiting up to 75s for SM_CONNECT_IND ...")
-		deadline := time.After(75 * time.Second)
-		// The IND is queued by the firmware and only surfaced once the host
-		// sends more commands — it reliably appeared in the NEXT session (which
-		// re-runs the MAC init) but never during a passive wait. Poll with a
-		// harmless MM message to flush any pending indication in-session.
-		flush := time.NewTicker(4 * time.Second)
-		defer flush.Stop()
+		fmt.Println("  SM_CONNECT_REQ sent; waiting up to 90s for SM_CONNECT_IND ...")
+		deadline := time.After(90 * time.Second)
+		// Passive wait, matching the vendor driver (which sends SM_CONNECT,
+		// waits for the CFM, and takes the IND async without polling). A
+		// 4s GetMacAddr flush-poll was tried and never surfaced the IND, so
+		// it is removed — the poll traffic may disturb the association.
 		for {
 			select {
-			case <-flush.C:
-				if f, err := (lmac.GetMacAddrReq{}).Encode(); err == nil {
-					_ = s.sess.BulkOut(ctx, lmac.WrapCommand(f))
-				}
 			case st := <-connCfmCh:
 				fmt.Printf("  SM_CONNECT_CFM status=%d (accepted; awaiting association)\n", st)
 			case ind := <-connIndCh:
@@ -475,7 +469,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 				fmt.Printf("association FAILED: status_code=%d\n", ind.StatusCode)
 				return 1
 			case <-deadline:
-				fmt.Println("no SM_CONNECT_IND within 75s — association did not complete")
+				fmt.Println("no SM_CONNECT_IND within 90s — association did not complete")
 				return 1
 			}
 		}
