@@ -19,15 +19,28 @@ enabled — far enough to associate to an AP and pass IP traffic.
 | Scanning | works — real SSIDs, real RSSI, multiple BSSes |
 | `SM_CONNECT_REQ` accepted (`SM_CONNECT_CFM status=0`) | works |
 | Bidirectional RF link | **proven** — AP sends probe responses to our MAC |
+| Association completes (`SM_CONNECT_IND status=0`) | works, every run |
+| EAPOL msg1 received from the AP, with live ANonces | works |
 
-**Not working — the single current blocker:**
+**Where the frontier is now (2026-09-08).** Association is no longer the
+blocker: the RX record-stride fix (commit `4c2ecf0`) took scanning from 0–1
+garbage BSS to 9 real networks, and association has completed on every run
+since. The handshake now runs to msg1.
 
-`SM_CONNECT_IND` (0x1802, the 802.11 association *result*) never arrives.
-The firmware accepts the request and starts associating, but association does
-not complete. Everything below that layer is healthy.
+The last observed wall was "the AP ignores our msg2 and retransmits msg1",
+which was diagnosed as dead host-descriptor data TX. **That verdict was
+wrong.** msg2 was *malformed*: the EAPOL-Key descriptor is 95 fixed bytes,
+not 91 — IEEE 802.11-2016 §12.7.2 fig 12-33 has an 8-byte Reserved field
+between the Key RSC and the Key MIC. Every field from the MIC onward sat 8
+bytes early, so a standards-compliant AP read `KeyDataLength` = 44036 against
+18 bytes available and dropped the frame with `key_data overflow` before ever
+checking the MIC. Fixed in `4eba628`; msg2 is now 121 bytes and verifies
+against an independent standards parser with an independently derived KCK.
 
-**Not started:** WPA2 EAPOL 4-way handshake, key install, data path (TX/RX of
-data frames), IP/ARP/DHCP/ICMP, `enX`-style interface exposure.
+**Untested on hardware:** whether msg3 now arrives. That is the one thing the
+next physical run should establish (§8).
+
+**Not started:** IP/ARP/DHCP/ICMP end to end, `enX`-style interface exposure.
 
 ---
 
@@ -162,8 +175,30 @@ broken" conclusion turned out to be a software bug.
 6. **`MM_KEY_ADD` id** — request is `0x0024` (CFM `0x0025`). Sending `0x25` as
    the request is silently ignored. (`lmac/msgids.go`)
 
+7. **RX record strides** — config records stride `4 + roundup(len,4)`, data
+   records a flat `len + 60`. We had `4 + len` and `4 + roundup(len+60,4)`, so
+   odd-length CFMs left stray bytes and every data record over-ate 4 bytes into
+   the next header. Scanning went from 0–1 garbage BSS to 9 real networks.
+   (`protocol/rxstream.go`, commit `4c2ecf0`)
+
+8. **EAPOL-Key descriptor was 8 bytes short** — the 95-byte descriptor has an
+   8-byte Reserved field between Key RSC and Key MIC (802.11-2016 §12.7.2 fig
+   12-33; `u8 key_id[8]` in wpa_supplicant's `struct wpa_eapol_key`). We used
+   91, so every field from the MIC on sat 8 bytes early and the AP read
+   `KeyDataLength` = 44036 → `key_data overflow` → silent drop. This masqueraded
+   as dead data TX for a full session of experiments. (`lmac/eapol.go`,
+   commit `4eba628`)
+
 Also fixed: scan per-channel `Duration` was 0 (minimal dwell) → now 120 TU;
-the dispatcher decoded only the first beacon per frame → now decodes all.
+the dispatcher decoded only the first beacon per frame → now decodes all;
+msg3's Key Data is one AES-wrapped blob and must be unwrapped *before* its KDEs
+are walked (`lmac.ParseKeyData`, commit `1450de5`).
+
+**Method rule earned the hard way (see #8):** never validate a wire format
+against your own encoder. A self-consistent wrong layout round-trips perfectly
+— all five EAPOL tests passed, and an independent-looking Python MIC check
+agreed, because both used our layout. Pin formats to a hand-built
+standard-layout frame (`TestKeyFrameStandardLayout`).
 
 ---
 
@@ -210,33 +245,42 @@ and are **silently ignored** post-boot — use `lmac.DbgMemWrite/ReadReq`.
 
 ## 8. Next steps, in order
 
-1. **Diagnose the missing `SM_CONNECT_IND`.**
-   Leading hypothesis: the AP is WPA2/WPA3-transition (AKM PSK+SAE, MFPC) and
-   our `WPA2PSKCCMPRsnIE` isn't acceptable to it. Test by varying the RSN IE
-   (MFPC/MFPR bits, AKM suite) and/or associating to a plain WPA2-only AP to
-   isolate. Secondary suspect: our station MAC is the hardcoded LAA
-   `02:11:22:33:44:55` (the efuse reads all-zero) — try a different LAA.
-   Also determine from the reference whether the IND only follows the EAPOL
-   exchange / control-port open rather than 802.11 association alone.
+1. **One hardware run: does msg3 arrive?** This is the whole question, and it
+   costs one replug:
 
-2. **Implement the host-driven WPA2 4-way handshake** (control port is
-   `CONTROL_PORT_HOST`): PMK = PBKDF2-HMAC-SHA1(pass, ssid, 4096, 32);
-   PTK via PRF-384; EAPOL-Key parse/serialise with HMAC-SHA1-128 MIC; GTK
-   unwrap (RFC 3394). Use the new `Dispatch.OnDataFrame` hook to capture EAPOL
-   frames. Install keys with `MM_KEY_ADD` (**0x0024**), then
-   `ME_SET_CONTROL_PORT`.
+   ```bash
+   # replug the dongle, then:
+   scripts/aic-zerocd-eject.sh ~/.event-horizon/firmware/aic8800D80-hybrid
+   sudo -n bin/usbwifi cmdctl bringup --stack
+   sudo -n bin/usbwifi cmdctl bringup --connect "Uncle Rad-Guest" \
+     --connect-pass '<pw>' --connect-channel 1 \
+     --connect-bssid d2:e8:f0:50:f8:32 --dump
+   ```
 
-3. **Data path** — TX host descriptor layout for bulk OUT, RX `hw_rxhdr`
-   parsing. Needed before any IP traffic.
+   - **msg3 arrives** → data TX was never broken; the frame was garbage. Carry
+     on to key install → control port → DHCP.
+   - **AP still only retransmits msg1** → the dead-data-TX hypothesis is back,
+     but note it has *never actually been tested*: until `4eba628` no
+     well-formed msg2 had ever been transmitted, so all seven prior TX
+     experiments were run against a frame the AP was always going to discard.
 
-4. **Validation / ping** — with no `enX`, do it manually over the data path:
+2. **Key install and control port.** `MM_KEY_ADD` (**0x0024**) for the PTK
+   (`sta_idx` = `SM_CONNECT_IND.ap_idx`) and the GTK (`sta_idx` 0xFF), then
+   `ME_SET_CONTROL_PORT` (0x1404). These now gate the success message on their
+   CFMs, so a failure reports itself instead of printing "controlled port
+   open".
+
+3. **Validation / ping** — with no `enX`, do it manually over the data path:
    ARP for the gateway → static IP (simpler than DHCP for a first proof) →
    ICMP echo. Log at every layer (assoc → key install → TX accepted → RX seen →
    ARP reply → ICMP reply) so a failure is attributable.
 
-A research workflow covering steps 2–4 was scripted but its agents died on a
-usage limit; it is cached and resumable at
-`workflows/scripts/eh-wifi-full-stack-wf_ae305c23-d65.js`.
+4. **Still-open leads if msg3 does not come** (from the audit, not yet acted
+   on): the 4s MM flush poke stops the moment the handshake starts, so the
+   handshake waits ~50s sending nothing; `MM_SET_COEX` may be `0x0065` rather
+   than our `0x0067` (both the Linux enum and the vendor driver say 0x65);
+   and `ME_CONFIG` sets `ht_supp=1` with an all-zero `mac_htcapability`, i.e.
+   "HT capable, supports no HT rate". Change one per run — each costs a replug.
 
 ---
 
