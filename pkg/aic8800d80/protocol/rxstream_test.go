@@ -85,20 +85,19 @@ func TestRxStream_AggregatedFrames(t *testing.T) {
 	}
 }
 
-// TestRxStream_DataFrameStride verifies data frames use the
-// roundup(len+60, 4) stride so a following config frame is found.
+// TestRxStream_DataFrameStride verifies data frames use the flat len+60
+// stride (reference aicwf_txrxif.c: the 4-byte USB header is included in the
+// span, no alignment) so a following config frame is found.
 func TestRxStream_DataFrameStride(t *testing.T) {
 	var s RxStream
-	// Data record: len=8, type=0 (data), body 8 bytes.
-	// stride = 4 + roundup(8+60, 4) = 4 + 68 = 72.
-	dataRec := make([]byte, 4+8)
+	// Data record: len=8, type=0 (data); total span = 8+60 = 68 bytes.
+	dataRec := make([]byte, 68)
 	binary.LittleEndian.PutUint16(dataRec[0:2], 8)
 	dataRec[2] = 0x00 // data type
 	cfg := buildCfgRecord(DBGMemReadCfm, nil)
 
-	chunk := make([]byte, 0, 72+len(cfg))
+	chunk := make([]byte, 0, 68+len(cfg))
 	chunk = append(chunk, dataRec...)
-	chunk = append(chunk, make([]byte, 72-len(dataRec))...) // padding per stride
 	chunk = append(chunk, cfg...)
 
 	s.Feed(chunk)

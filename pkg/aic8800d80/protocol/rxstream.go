@@ -77,10 +77,17 @@ func (f RxFrame) ParamLen() uint16 {
 // Linux aicwf_process_rxframes.
 //
 // Record layout: [len:2 LE][type:1][pad:1][len bytes]. The stride to
-// the next record depends on the frame type (matches Linux):
+// the next record depends on the frame type, straight from the reference
+// driver (aicwf_txrxif.c):
 //
-//	config: 4 + len
-//	data:   4 + roundup(len + 60, 4)
+//	config: 4 + roundup(len, 4) — the pad bytes ARE on the wire; a stride
+//	  of 4+len under-consumes whenever len%4 != 0 (e.g. len=14 leaves 2
+//	  stray bytes) and the next header parses as garbage.
+//	data:   len + 60 — flat, no +4 and no rounding; the 4-byte USB header
+//	  is INCLUDED in the span (buffer->read += aggr_len). Our old
+//	  4+roundup(len+60,4) over-consumed 4 bytes into the next record's
+//	  header on every data record, truncating beacons and poisoning the
+//	  stream behind them.
 type RxStream struct {
 	buf []byte
 }
@@ -101,10 +108,9 @@ func (s *RxStream) Next() (f RxFrame, ok bool, err error) {
 	typ := s.buf[2]
 	var stride int
 	if typ&USBTypeCfg == USBTypeCfg {
-		stride = 4 + pktLen
+		stride = 4 + ((pktLen + rxAlignment - 1) / rxAlignment * rxAlignment)
 	} else {
-		aggr := pktLen + rxHWHRDLens
-		stride = 4 + ((aggr + rxAlignment - 1) / rxAlignment * rxAlignment)
+		stride = pktLen + rxHWHRDLens
 	}
 	if rxDebug {
 		fmt.Printf("[rxstream] pktLen=%d type=0x%02x stride=%d buffered=%d\n", pktLen, typ, stride, len(s.buf))

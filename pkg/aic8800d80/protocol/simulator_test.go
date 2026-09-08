@@ -325,11 +325,12 @@ func TestWaitForCfm_SplitResponse(t *testing.T) {
 // TestWaitForCfm_DataNoiseBeforeCfm interleaves data frames (60-byte HW
 // header stride) with the CFM — the exact capture pattern.
 func TestWaitForCfm_DataNoiseBeforeCfm(t *testing.T) {
-	// Build one data record: len=8 body, type without 0x10 bit.
-	dataRec := make([]byte, 4+8)
+	// Build one data record: reference framing is a flat len+60 span
+	// including the 4-byte USB header (aicwf_txrxif.c), so len=8 spans
+	// 68 bytes total.
+	dataRec := make([]byte, 68)
 	binary.LittleEndian.PutUint16(dataRec[0:2], 8)
-	dataRec[2] = 0x02
-	dataRec = append(dataRec, make([]byte, 60)...) // HW header padding to stride
+	dataRec[2] = 0x02 // data type (no 0x10 bit)
 
 	sr := &scriptedReader{transfers: [][]byte{
 		dataRec,
