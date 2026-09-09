@@ -1,8 +1,12 @@
 # Handover — AIC8800D80 USB Wi-Fi on macOS (event-horizon)
 
-Status as of 2026-09-08. Goal: drive a UGREEN AX900 (AICSEMI AIC8800D80) USB
+Status as of 2026-09-09. Goal: drive a UGREEN AX900 (AICSEMI AIC8800D80) USB
 Wi-Fi adapter entirely from **user space on macOS** — no kernel driver, SIP
 enabled — far enough to associate to an AP and pass IP traffic.
+
+**This goal is met.** The dongle associates to WPA2, completes the 4-way
+handshake, gets a DHCP lease and pings the gateway — all from user space via
+libusb, with SIP on and no kernel extension.
 
 ---
 
@@ -22,32 +26,35 @@ enabled — far enough to associate to an AP and pass IP traffic.
 | Association completes (`SM_CONNECT_IND status=0`) | works, every run |
 | EAPOL msg1 received from the AP, with live ANonces | works |
 
-**Where the frontier is now (2026-09-09).** WPA2 is UP. A live run does the
-whole thing: association status=0, EAPOL msg1 in, msg2 out **with a TX
-confirm**, msg3 MIC verified, GTK unwrapped, msg4 out, PTK and GTK installed
-(`MM_KEY_ADD` CFM ok, hw_key_idx 0x10 and 1), controlled port opened — and the
-AP does not disconnect us. The link holds.
+**IT WORKS, end to end (2026-09-09 21:05).** One run, from a cold replug:
 
-Three walls fell, and all three were wrong assumptions rather than missing
-capability — each with a *passing test* behind it (see §5 and the method rule):
+```
+CONNECTED to "Uncle Rad-Guest": bssid=d2:e8:f0:50:f8:32 band=0 freq=2412
+EAPOL: msg3 MIC ok / GTK unwrapped (16 bytes, idx 1)
+mm_key_add PTK: CFM ok / mm_key_add GTK: CFM ok / control port open
+NET: offer 192.168.2.243 from 192.168.2.1 (lease 3600s)
+NET: gateway 192.168.2.1 at 74:24:9f:44:28:1f
+NET: ping 192.168.2.1 seq=1 rtt=3ms ... 4/4 ping replies
+```
 
-1. The EAPOL-Key descriptor was 8 bytes short, so every msg2 was malformed.
-2. We emitted the **aggregated** USB TX record header (8 bytes) from a
-   reference function that `CONFIG_USB_TX_AGGR = n` never compiles. The
-   firmware read byte 2 as the record type, saw a length byte, and discarded
-   every data frame while libusb reported success. This is what looked for a
-   whole session like dead TX hardware.
-3. A leftover debug hack alternated TX pipes per send, so msg4 went out the
-   command pipe and vanished — the AP timed the handshake out with
-   `SM_DISCONNECT_IND` reason 15 *after* we had printed "controlled port open".
+Four walls fell to get here, and the pattern is worth more than any of them
+individually: **every one was a wrong assumption with a PASSING TEST behind
+it**, not a missing capability.
 
-**The one thing still untested on hardware:** DHCP. The offer never arrived
-because the receive path could not decode one — the firmware delivers raw
-802.11 MPDUs, not Ethernet, and our extractor hunted for an Ethernet header.
-That is fixed (§5.9) but has not yet been run against the dongle. That is the
-next physical test, and the only open question.
+| Wall | The test that hid it |
+|---|---|
+| EAPOL descriptor 8 bytes short (no Reserved field) | round-tripped our own `Encode` |
+| 8-byte aggregated USB TX header | matched a function `CONFIG_USB_TX_AGGR=n` never compiles |
+| TX pipe alternation dropping msg4 | a debug probe nobody retired once it had answered |
+| RX decoder expecting Ethernet at offset 60 | asserted the wrong layout, passed throughout |
 
-**Not started:** IP/ARP/DHCP/ICMP end to end, `enX`-style interface exposure.
+"Management TX radiates but data TX is dead" was the confident conclusion drawn
+from three of those at once. It was never true — the firmware was discarding
+malformed records while libusb reported success.
+
+**Not started:** `enX`-style interface exposure (see
+`docs/aic8800d80-macos-driver-plan.md`), and reaching the Starlink terminal
+over the dongle's link rather than the host's `en0`.
 
 ---
 
