@@ -49,6 +49,8 @@ func runCmdCtl(args []string) int {
 		return runCmdProbe(ctx)
 	case "bringup":
 		return runCmdBringup(ctx, args[1:])
+	case "link":
+		return runCmdLink(ctx, args[1:])
 	case "help", "-h", "--help":
 		usageCmdCtl()
 		return 0
@@ -479,5 +481,24 @@ Commands:
        --timeout 4s                   ACK timeout
   listen [--duration 10s]             Passive tap on bulk IN config frames
   probe                               Endpoint dump + raw RX sniff + TX retry
+
+  link --ssid <name> [options]        Bring the whole link up in one command:
+                                      flash -> stack -> associate -> WPA2 ->
+                                      DHCP -> utun bridge. Replaces the old
+                                      three-step sequence.
+       --pass <passphrase>            WPA2 passphrase (omit for an open AP)
+       --channel <n> --bssid <mac>    Target BSS (both recommended; --bssid is
+                                      required for hidden APs)
+       --route 192.168.100.1          Hosts to route through the bridge
+       --skip-flash                   Reuse the running firmware instance
+       --force                        Proceed on an already-used instance
+
+  bringup [options]                   The individual stages, for debugging.
+                                      Prefer 'link' unless you need one stage.
+
+A clean run needs freshly flashed firmware, and this chip only re-enters
+flashable ZeroCD mode on a physical unplug/replug. 'link' detects the USB
+state and asks for a replug rather than producing results from a radio that
+cannot be trusted.
 `)
 }
