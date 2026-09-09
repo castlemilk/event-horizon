@@ -22,23 +22,30 @@ enabled — far enough to associate to an AP and pass IP traffic.
 | Association completes (`SM_CONNECT_IND status=0`) | works, every run |
 | EAPOL msg1 received from the AP, with live ANonces | works |
 
-**Where the frontier is now (2026-09-08).** Association is no longer the
-blocker: the RX record-stride fix (commit `4c2ecf0`) took scanning from 0–1
-garbage BSS to 9 real networks, and association has completed on every run
-since. The handshake now runs to msg1.
+**Where the frontier is now (2026-09-09).** WPA2 is UP. A live run does the
+whole thing: association status=0, EAPOL msg1 in, msg2 out **with a TX
+confirm**, msg3 MIC verified, GTK unwrapped, msg4 out, PTK and GTK installed
+(`MM_KEY_ADD` CFM ok, hw_key_idx 0x10 and 1), controlled port opened — and the
+AP does not disconnect us. The link holds.
 
-The last observed wall was "the AP ignores our msg2 and retransmits msg1",
-which was diagnosed as dead host-descriptor data TX. **That verdict was
-wrong.** msg2 was *malformed*: the EAPOL-Key descriptor is 95 fixed bytes,
-not 91 — IEEE 802.11-2016 §12.7.2 fig 12-33 has an 8-byte Reserved field
-between the Key RSC and the Key MIC. Every field from the MIC onward sat 8
-bytes early, so a standards-compliant AP read `KeyDataLength` = 44036 against
-18 bytes available and dropped the frame with `key_data overflow` before ever
-checking the MIC. Fixed in `4eba628`; msg2 is now 121 bytes and verifies
-against an independent standards parser with an independently derived KCK.
+Three walls fell, and all three were wrong assumptions rather than missing
+capability — each with a *passing test* behind it (see §5 and the method rule):
 
-**Untested on hardware:** whether msg3 now arrives. That is the one thing the
-next physical run should establish (§8).
+1. The EAPOL-Key descriptor was 8 bytes short, so every msg2 was malformed.
+2. We emitted the **aggregated** USB TX record header (8 bytes) from a
+   reference function that `CONFIG_USB_TX_AGGR = n` never compiles. The
+   firmware read byte 2 as the record type, saw a length byte, and discarded
+   every data frame while libusb reported success. This is what looked for a
+   whole session like dead TX hardware.
+3. A leftover debug hack alternated TX pipes per send, so msg4 went out the
+   command pipe and vanished — the AP timed the handshake out with
+   `SM_DISCONNECT_IND` reason 15 *after* we had printed "controlled port open".
+
+**The one thing still untested on hardware:** DHCP. The offer never arrived
+because the receive path could not decode one — the firmware delivers raw
+802.11 MPDUs, not Ethernet, and our extractor hunted for an Ethernet header.
+That is fixed (§5.9) but has not yet been run against the dongle. That is the
+next physical test, and the only open question.
 
 **Not started:** IP/ARP/DHCP/ICMP end to end, `enX`-style interface exposure.
 
@@ -245,44 +252,50 @@ and are **silently ignored** post-boot — use `lmac.DbgMemWrite/ReadReq`.
 
 ## 8. Next steps, in order
 
-1. **One hardware run: does msg3 arrive?** This is the whole question, and it
-   costs one replug:
+1. **One hardware run: does the DHCP offer decode now?** This is the only open
+   question, and it costs one replug.
 
    ```bash
-   # replug the dongle, then:
-   scripts/aic-zerocd-eject.sh ~/.event-horizon/firmware/aic8800D80-hybrid
+   # unplug the dongle, wait ~10s, plug it back in, then:
+   cd ~/projects/event-horizon && go build -o bin/usbwifi ./cmd/usbwifi
+   sudo -n scripts/aic-zerocd-eject.sh ~/.event-horizon/firmware/aic8800D80-hybrid
    sudo -n bin/usbwifi cmdctl bringup --stack
-   sudo -n bin/usbwifi cmdctl bringup --connect "Uncle Rad-Guest" \
-     --connect-pass '<pw>' --connect-channel 1 \
-     --connect-bssid d2:e8:f0:50:f8:32 --dump
+   sudo -n bin/usbwifi cmdctl bringup \
+     --connect "Uncle Rad-Guest" --connect-pass '<pw>' \
+     --connect-channel 1 --connect-bssid d2:e8:f0:50:f8:32
    ```
 
-   - **msg3 arrives** → data TX was never broken; the frame was garbage. Carry
-     on to key install → control port → DHCP.
-   - **AP still only retransmits msg1** → the dead-data-TX hypothesis is back,
-     but note it has *never actually been tested*: until `4eba628` no
-     well-formed msg2 had ever been transmitted, so all seven prior TX
-     experiments were run against a frame the AP was always going to discard.
+   Expect the handshake to complete as it already does, then `NET: DHCP offer`
+   → ARP reply → ICMP echo. A `LINK DOWN: SM_DISCONNECT_IND reason=N (...)`
+   line now explains any drop in words rather than hex.
 
-2. **Key install and control port.** `MM_KEY_ADD` (**0x0024**) for the PTK
-   (`sta_idx` = `SM_CONNECT_IND.ap_idx`) and the GTK (`sta_idx` 0xFF), then
-   `ME_SET_CONTROL_PORT` (0x1404). These now gate the success message on their
-   CFMs, so a failure reports itself instead of printing "controlled port
-   open".
+   If there is still no offer, the next things to check, in order: whether any
+   RX data frame reaches `OnDataFrame` at all after the keys go in (log the
+   `hw_rxhdr` `decr_status` and `sta_idx`); whether `flags_is_amsdu` is set, in
+   which case `ExtractEthernetAll` is the path; and whether the offer is coming
+   back group-addressed (we set the BOOTP BROADCAST flag), which is now handled
+   but has never been exercised.
 
-3. **Validation / ping** — with no `enX`, do it manually over the data path:
-   ARP for the gateway → static IP (simpler than DHCP for a first proof) →
-   ICMP echo. Log at every layer (assoc → key install → TX accepted → RX seen →
-   ARP reply → ICMP reply) so a failure is attributable.
+2. **Ping, then the Starlink terminal.** With DHCP up, ARP the gateway and ICMP
+   it; then the actual objective — reach the terminal's gRPC endpoint over the
+   dongle's link rather than the host's `en0`.
 
-4. **Still-open leads if msg3 does not come** (from the audit, not yet acted
-   on): the 4s MM flush poke stops the moment the handshake starts, so the
-   handshake waits ~50s sending nothing; `MM_SET_COEX` may be `0x0065` rather
-   than our `0x0067` (both the Linux enum and the vendor driver say 0x65);
-   and `ME_CONFIG` sets `ht_supp=1` with an all-zero `mac_htcapability`, i.e.
-   "HT capable, supports no HT rate". Change one per run — each costs a replug.
+3. **Interface exposure.** Passing IP traffic in-process is enough to prove the
+   stack; exposing it as an `enX` device is a separate problem and needs the
+   DriverKit plan in `docs/aic8800d80-macos-driver-plan.md`.
 
----
+### Loose ends worth knowing about
+
+- The handshake prints "controlled port open" on the strength of its three
+  CFMs. That is true but not proof the AP accepted msg4 — a disconnect can
+  still follow. `SM_DISCONNECT_IND` is now decoded, which closes the gap in
+  practice, but the message could be made conditional on a quiet interval.
+- `patch_config: read of 0x110180 failed` appears on every run and has never
+  been chased. It is pre-existing and does not stop association.
+- The EAPOL extractor still brute-force scans for `88 8e` rather than using the
+  now-known LLC/SNAP offset. It works, but it is the last place relying on a
+  scan rather than the structure.
+
 
 ## 9. References
 
