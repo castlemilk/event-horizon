@@ -244,14 +244,15 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	// is confirmed working; testing the rest with per-message reporting and
 	// generous timeouts (stack_start starts the whole MAC/PHY, so it can be
 	// slow). submitTimed logs whether the CFM arrived.
-	submitTimed := func(name string, msg lmac.Builder, d time.Duration) {
+	submitTimed := func(name string, msg lmac.Builder, d time.Duration) bool {
 		c, cancel := context.WithTimeout(ctx, d)
 		defer cancel()
 		if err := s.submitter.Submit(c, msg); err != nil {
 			fmt.Printf("  %s: NO CFM (%v)\n", name, err)
-		} else {
-			fmt.Printf("  %s: CFM ok\n", name)
+			return false
 		}
+		fmt.Printf("  %s: CFM ok\n", name)
+		return true
 	}
 	// Windows order (from disassembling the vendor's aicusbwifi.sys for this
 	// chip, 368b:8d85): RF / power / calibration config runs BEFORE stack_start,
@@ -337,7 +338,16 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	// comes up cleanly; a short settle lets it stabilise before MAC init.
 	if *stack || *stackOnly {
 		fmt.Println("sending stack_start (starts the MAC stack)...")
-		submitTimed("stack_start 0x007B", lmac.StackStartReq{}, 6*time.Second)
+		// A missing stack_start CFM means this firmware instance is already
+		// dead: the operating rules say a run showing it cannot be trusted,
+		// and everything downstream — association, handshake, DHCP — would
+		// then produce results that look like data but are not. Fail here
+		// rather than let the caller spend a replug discovering it later.
+		if !submitTimed("stack_start 0x007B", lmac.StackStartReq{}, 6*time.Second) {
+			fmt.Println("stack_start got no CFM — this firmware instance is not usable.")
+			fmt.Println("Unplug the dongle for ~10s, replug, and run again.")
+			return 1
+		}
 		// ALWAYS stop here. Every command sent after stack_start in the SAME
 		// session gets no CFM (measured: reset/me_config/chan/start/coex/add_if
 		// all time out), yet they ARE delivered — so continuing would apply a

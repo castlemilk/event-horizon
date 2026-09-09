@@ -796,8 +796,19 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			log.Printf("[AIC] op %d/%d (0x%08x) slow: %v", i+1, len(ops), op.Addr, d.Round(time.Millisecond))
 		}
 	}
-	log.Printf("[AIC] fmacfw upload complete: %d/%d ops, %d bytes placed, %d verification hole(s)",
-		len(ops), len(ops), writtenTotal, len(holes))
+	// Report whether verification actually RAN. Read-back is off by default
+	// because interleaving reads during upload can wedge the boot ROM, so the
+	// old unconditional "0 verification hole(s)" was not a clean bill of
+	// health — it printed identically whether the image landed perfectly or
+	// was never inspected at all.
+	if os.Getenv("AIC_VERIFY_WRITES") != "" {
+		log.Printf("[AIC] fmacfw upload complete: %d/%d ops, %d bytes placed, %d verification hole(s)",
+			len(ops), len(ops), writtenTotal, len(holes))
+	} else {
+		log.Printf("[AIC] fmacfw upload complete: %d/%d ops, %d bytes placed "+
+			"(writes NOT read back; set AIC_VERIFY_WRITES=1 to verify, at the risk of wedging the boot ROM)",
+			len(ops), len(ops), writtenTotal)
+	}
 	if len(holes) > 0 {
 		log.Printf("[AIC] WARNING: %d bytes did not retain: %v ... (firmware may misbehave)",
 			len(holes)*protocol.CloneSmallChunk, holes[:min(len(holes), 8)])
