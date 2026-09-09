@@ -161,3 +161,79 @@ func (c *ConnectInd) Decode(payload []byte) error {
 	c.CenterFreq = binary.LittleEndian.Uint16(payload[824:826])
 	return nil
 }
+
+// DisconnectInd is SM_DISCONNECT_IND (0x1805, struct sm_disconnect_ind):
+// reason_code u16 @0, vif_idx u8 @2, ft_over_ds bool @3, reassoc u8 @4.
+//
+// This is the firmware telling us the link died and why, and it is the single
+// most informative message on the association path. It went undecoded for a
+// whole debugging session: the raw line "[SM 0x1805] 0f 00 ..." was reason 15,
+// "4-way handshake timeout", i.e. the AP never got a valid msg2 — which was
+// exactly the bug being chased at the time.
+type DisconnectInd struct {
+	ReasonCode uint16
+	VifIdx     uint8
+	FTOverDS   bool
+	Reassoc    uint8
+}
+
+const DisconnectIndSize = 6
+
+func (d *DisconnectInd) Decode(payload []byte) error {
+	if len(payload) < 5 {
+		return fmt.Errorf("disconnect ind: short payload (%d)", len(payload))
+	}
+	d.ReasonCode = binary.LittleEndian.Uint16(payload[0:2])
+	d.VifIdx = payload[2]
+	d.FTOverDS = payload[3] != 0
+	d.Reassoc = payload[4]
+	return nil
+}
+
+// ReasonName maps an 802.11 reason code (IEEE 802.11-2020 table 9-49) to text.
+// Only the codes a station actually meets are named; the rest report numerically.
+func ReasonName(code uint16) string {
+	switch code {
+	case 1:
+		return "unspecified"
+	case 2:
+		return "previous authentication no longer valid"
+	case 3:
+		return "deauthenticated: leaving"
+	case 4:
+		return "disassociated: inactivity"
+	case 6:
+		return "class-2 frame from non-authenticated STA"
+	case 7:
+		return "class-3 frame from non-associated STA"
+	case 8:
+		return "disassociated: leaving BSS"
+	case 9:
+		return "STA not authenticated"
+	case 14:
+		return "MIC failure"
+	case 15:
+		return "4-way handshake timeout"
+	case 16:
+		return "group-key handshake timeout"
+	case 17:
+		return "handshake element mismatch"
+	case 18:
+		return "invalid group cipher"
+	case 19:
+		return "invalid pairwise cipher"
+	case 20:
+		return "invalid AKMP"
+	case 23:
+		return "802.1X authentication failed"
+	case 24:
+		return "cipher suite rejected by policy"
+	default:
+		return "unknown"
+	}
+}
+
+func (d DisconnectInd) String() string {
+	return fmt.Sprintf("reason=%d (%s) vif=%d reassoc=%d",
+		d.ReasonCode, ReasonName(d.ReasonCode), d.VifIdx, d.Reassoc)
+}

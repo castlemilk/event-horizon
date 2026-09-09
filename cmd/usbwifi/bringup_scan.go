@@ -73,6 +73,13 @@ func runCmdBringup(ctx context.Context, args []string) int {
 
 	d := &event.Dispatch{
 		OnResetCfm: func() { fmt.Println("  MM_RESET_CFM ok") },
+		OnDisconnectInd: func(ind lmac.DisconnectInd) {
+			// The firmware's own account of why the link dropped. Reason 15
+			// ("4-way handshake timeout") means the AP never accepted our
+			// msg2/msg4 — it is the difference between "we are done" and
+			// "we only think we are done".
+			fmt.Printf("  LINK DOWN: SM_DISCONNECT_IND %s\n", ind)
+		},
 		OnStartCfm: func() { fmt.Println("  MM_START_CFM ok") },
 		OnVersion: func(c lmac.VersionCfm) {
 			fmt.Printf("  fw machw=0x%08x lmac=0x%08x\n", c.VersionMacHW1, c.VersionLMAC)

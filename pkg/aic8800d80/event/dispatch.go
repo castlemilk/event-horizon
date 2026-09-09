@@ -21,7 +21,12 @@ type Dispatch struct {
 	OnMacAddr      func(lmac.MacAddrCfm)
 	OnConnectCfm   func(status uint8)
 	OnConnectInd   func(lmac.ConnectInd)
-	OnAnyUnknown   func(msgID uint16, payload []byte)
+	// OnDisconnectInd receives SM_DISCONNECT_IND — the firmware's own account
+	// of why the link dropped, carrying an 802.11 reason code. Leaving it
+	// undecoded once cost a debugging session: reason 15 ("4-way handshake
+	// timeout") was sitting in the log as an unexplained [SM 0x1805].
+	OnDisconnectInd func(lmac.DisconnectInd)
+	OnAnyUnknown    func(msgID uint16, payload []byte)
 	// OnTxCfm, if set, receives TX-confirm payloads (USB record type 0x12:
 	// array of u32 confirm ids for hostdesc.status_desc_addr with bit31).
 	OnTxCfm func(payload []byte)
@@ -46,7 +51,7 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 		// This firmware wraps config responses (SM_CONNECT_CFM/IND) inside a
 		// data-typed frame: [0x11 0x00][id:2][dest:2][src:2][param_len:2]
 		// [pattern:4][param...]. Scan for the SM connect messages and route them.
-		if d.OnConnectCfm != nil || d.OnConnectInd != nil {
+		if d.OnConnectCfm != nil || d.OnConnectInd != nil || d.OnDisconnectInd != nil {
 			for i := 0; i+14 <= len(payload); i++ {
 				if payload[i] != 0x11 || payload[i+1] != 0x00 {
 					continue
@@ -71,6 +76,17 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 						var ind lmac.ConnectInd
 						if err := ind.Decode(payload[paramOff:end]); err == nil {
 							d.OnConnectInd(ind)
+						}
+					}
+				case lmac.SMDisconnectInd:
+					if plen == lmac.DisconnectIndSize && d.OnDisconnectInd != nil {
+						end := paramOff + plen
+						if end > len(payload) {
+							end = len(payload)
+						}
+						var ind lmac.DisconnectInd
+						if err := ind.Decode(payload[paramOff:end]); err == nil {
+							d.OnDisconnectInd(ind)
 						}
 					}
 				}
@@ -182,6 +198,17 @@ func (d *Dispatch) Handle(_ context.Context, msgID uint16, payload []byte) error
 			return nil
 		}
 		d.OnConnectInd(ind)
+		return nil
+	case lmac.SMDisconnectInd:
+		if d.OnDisconnectInd == nil {
+			return nil
+		}
+		var ind lmac.DisconnectInd
+		if err := ind.Decode(payload); err != nil {
+			log.Printf("[dispatch] disconnect ind decode: %v", err)
+			return nil
+		}
+		d.OnDisconnectInd(ind)
 		return nil
 	default:
 		if d.OnAnyUnknown != nil {
