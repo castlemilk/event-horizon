@@ -94,9 +94,55 @@ the running firmware. Use `lmac.DbgMemWriteReq` / `DbgMemReadReq` post-boot.
   BSS — almost always the **wrong channel**, not bad credentials. Confirm the
   target's real channel and BSSID from a scan before blaming the passphrase.
 - WPA2 is host-driven (`CONTROL_PORT_HOST`): association first, then the EAPOL
-  4-way handshake and `MM_KEY_ADD`.
+  4-way handshake and `MM_KEY_ADD`. This works end to end — association, the
+  full 4-way, key install, DHCP, and IP traffic through a utun bridge to a
+  real Starlink terminal. `SM_DISCONNECT_IND` (0x1805) carries the 802.11
+  reason code and is the firmware telling you exactly why a link dropped;
+  reason 15 is a 4-way timeout, i.e. the AP never accepted your msg2/msg4.
 
-## 8. Method
+## 8. The data path (TX and RX)
+
+- The USB TX record header is **4 bytes** — `[len_lo, len_hi&0x0f, 0x01, 0x00]`
+  then a 28-byte hostdesc — from `aicwf_usb_bus_txdata()`. The **8**-byte
+  aggregated header from `aicwf_usb_aggr()` is compiled only under
+  `CONFIG_USB_TX_AGGR`, which the reference Makefile sets to `n`. Send the
+  8-byte form and the firmware reads byte 2 as the record type, sees a length
+  byte instead of `0x01`, and silently discards every data frame — while
+  libusb reports success. This looked exactly like dead TX hardware.
+- **Never alternate TX pipes.** Data frames go out the bulk data pipe. A
+  leftover "which pipe works?" probe toggled per send, so msg4 went out the
+  command pipe and vanished after msg2 had already succeeded.
+- `need_cfm` is derived from the **ethertype**, not chosen by the caller: the
+  reference sets it for EAPOL/WAPI and never for ordinary data. A field whose
+  zero value means "request a confirm on slot 0" is a trap — DHCP inherited it
+  by not setting it and wedged the bulk OUT endpoint.
+- **RX delivers 802.11 MPDUs, not Ethernet.** A record is a 56-byte `hw_rxhdr`
+  (whose first 4 bytes *are* the USB record header) + 4 pad, then the MPDU at
+  offset 60. Convert: 24-byte header (+2 QoS, +4 HT Control, +6 4-addr), skip
+  the cipher header the hardware leaves in place (8 for CCMP), skip LLC/SNAP,
+  then for AP→STA **DA = addr1, SA = addr3** — addr2 is the AP, not the
+  originator.
+- `ME_TX_CREDITS_UPDATE_IND` (0x140b) is **advisory**. Every credit mutation in
+  the reference is inside `#if 0`. Do not implement credit tracking.
+- The EAPOL-Key descriptor is **95** fixed bytes: there is an 8-byte Reserved
+  field between the RSC and the MIC. Omit it and every frame you send is 8
+  bytes short and every MIC you check is wrong.
+
+## 9. Never validate a wire format against your own encoder
+
+Every wall in this project — the EAPOL descriptor, the TX record header, the
+pipe alternation, the RX layout, and a client that spoke gRPC-Web to a mock —
+had a **passing test** behind it. A self-consistent wrong layout round-trips
+perfectly, and a checker written from the same wrong assumption agrees with it.
+An "independent" verification in another language proves nothing if it reuses
+your offsets.
+
+Pin formats to something you did not write: a hand-built frame laid out from
+the standard, a byte string from the reference driver, or real captured bytes.
+When a whole subsystem looks dead, suspect that a passing test is asserting the
+wrong thing before you suspect the silicon.
+
+## 10. Method
 
 - Instrument before theorising. `--dump` plus `protocol.SetRxDebug` (record
   boundaries) found in one run what days of reasoning missed. Note that `sudo`
