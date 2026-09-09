@@ -120,23 +120,66 @@ grep -nE "mov\s+dx, 0x<msgid>$" /tmp/wifi.asm   # find a message builder
 cd ~/projects/event-horizon
 go build -o bin/usbwifi ./cmd/usbwifi
 
-# 1. replug the dongle, then flash
-sudo -n scripts/aic-zerocd-eject.sh ~/.event-horizon/firmware/aic8800D80-hybrid
-
-# 2. start the MAC stack (exits straight after stack_start)
-sudo -n bin/usbwifi cmdctl bringup --stack
-
-# 3a. scan
-sudo -n bin/usbwifi cmdctl bringup --channels 1,6,11 --scan-duration 20s
-
-# 3b. or associate
-sudo -n bin/usbwifi cmdctl bringup \
-  --connect "Uncle Rad-Guest" --connect-pass '<pw>' \
-  --connect-channel 1 --connect-bssid d2:e8:f0:50:f8:32
+# Unplug the dongle, wait ~10s, replug. Then ONE command does everything:
+#   flash -> stack_start -> associate -> WPA2 4-way -> DHCP -> utun bridge
+sudo -n bin/usbwifi cmdctl link \
+  --ssid "Uncle Rad-Guest" --pass '<pw>' \
+  --channel 1 --bssid d2:e8:f0:50:f8:32 \
+  --route 192.168.100.1
 ```
 
-Useful flags: `--dump` (hex-dump every frame **and** enable RX record-boundary
-tracing), `--prescan`, `--connect-bssid`.
+`link` reads the USB identity first and refuses to run on a firmware instance
+that has already been used, because the chip allows one `MM_RESET` per flash
+and the connect spends it — a second run goes deaf without saying so. Pass
+`--skip-flash` only when you know the instance is untouched.
+
+### Verify the traffic really went over the dongle
+
+This matters more than it sounds: if the host can reach the terminal on its
+own, a passing test proves nothing. Check the negative first.
+
+```bash
+route -n get 192.168.100.1 | grep interface   # expect: utun<N>, not en0
+ping -c 4 192.168.100.1                       # expect: replies
+grpcurl -plaintext 192.168.100.1:9200 list    # expect: SpaceX.API.Device.Device
+```
+
+On the network this was developed against, the host's `en0` is on a different
+subnet and **cannot reach `192.168.100.1` at all** — 100% packet loss before
+the bridge, 0% after. If your `en0` can already reach the dish, take the
+interface down or the test is meaningless.
+
+### The individual stages, for debugging
+
+`link` is a wrapper. When you need one stage:
+
+```bash
+sudo -n scripts/aic-zerocd-eject.sh ~/.event-horizon/firmware/aic8800D80-hybrid
+sudo -n bin/usbwifi cmdctl bringup --stack
+sudo -n bin/usbwifi cmdctl bringup --connect "Uncle Rad-Guest" \
+  --connect-pass '<pw>' --connect-channel 1 --connect-bssid d2:e8:f0:50:f8:32 \
+  [--bridge] [--net-target 192.168.100.1] [--dump]
+```
+
+Useful flags: `--dump` (hex-dump every frame and enable RX record-boundary
+tracing), `--net-target <ip>` (ping an address off our subnet, to test routing
+before building anything on it), `--prescan`.
+
+### Failure table
+
+| Symptom | Meaning | Do |
+|---|---|---|
+| `link: dongle is absent` | not enumerated | check the cable/hub |
+| `link:` refuses, "already running firmware" | instance may be spent | replug |
+| `stack_start: NO CFM` | instance is dead | replug (this now aborts) |
+| `association FAILED: status_code=1` + all-zero BSSID | wrong channel, not bad credentials | confirm channel/BSSID from a scan |
+| `EAPOL: no msg1 within 30s` | associated but AP never started the handshake | check the passphrase is current |
+| `msg3 MIC INVALID` | wrong passphrase (the MIC is the check) | get the current one |
+| `no msg3` but msg1 repeats | AP is discarding our msg2 | a frame-format bug, not credentials |
+| `LINK DOWN: SM_DISCONNECT_IND reason=15` | 4-way timeout — AP never accepted msg2/msg4 | as above |
+| `key install FAILED` | MM_KEY_ADD/control port got no CFM | replug; instance likely degraded |
+| `NET: no DHCP offer within 15s` | link up, no lease | check the AP hands out DHCP on that SSID |
+| `BRIDGE: utun create failed` | needs root | run under sudo |
 
 ### The test network
 
