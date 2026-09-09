@@ -16,7 +16,7 @@ import (
 // then ICMP echo to the gateway. It proves the data path carries real IP,
 // which is the precondition for the Starlink interrogation. Returns 0 when
 // at least one ping reply arrives.
-func runDhcpPing(ctx context.Context, s *session, vif, apIdx uint8, staMAC, apMAC [6]byte, netCh <-chan lmac.Ethernet) int {
+func runDhcpPing(ctx context.Context, s *session, vif, apIdx uint8, staMAC, apMAC [6]byte, netCh <-chan lmac.Ethernet, netTarget [4]byte) int {
 	bcast := [6]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 	zeroIP := [4]byte{}
 	bcastIP := [4]byte{255, 255, 255, 255}
@@ -153,56 +153,81 @@ waitARP:
 	fmt.Printf("  NET: gateway %v at %v\n", ipStr(gw), macStr(gwMAC))
 
 	// --- ICMP ping ---
-	var idBytes [2]byte
-	if _, err := rand.Read(idBytes[:]); err != nil {
-		log.Printf("rand ping id: %v", err)
-		return 1
-	}
-	pingID := binary.BigEndian.Uint16(idBytes[:])
-	rx := 0
-	for seq := uint16(1); seq <= 4; seq++ {
-		echo := (&lmac.ICMPEcho{ID: pingID, Seq: seq,
-			Data: []byte(fmt.Sprintf("event-horizon %d", seq))}).Encode(true)
-		t0 := time.Now()
-		if err := sendIP(gwMAC, myIP, gw, lmac.IPProtoICMP, echo); err != nil {
-			fmt.Printf("  NET: ping send: %v\n", err)
-			continue
+	// pingTarget echoes dst four times. For an off-subnet destination the frame
+	// still goes to the gateway's MAC — that is ordinary IP routing, and it is
+	// what lets us probe the Starlink terminal (192.168.100.1) from whatever
+	// subnet the AP's DHCP put us on.
+	pingTarget := func(dst [4]byte, dstMAC [6]byte) int {
+		var idBytes [2]byte
+		if _, err := rand.Read(idBytes[:]); err != nil {
+			log.Printf("rand ping id: %v", err)
+			return 0
 		}
-		select {
-		case e := <-netCh:
-			if e.Ethertype != lmac.EtherTypeIP {
-				seq--
+		pingID := binary.BigEndian.Uint16(idBytes[:])
+		rx := 0
+		for seq := uint16(1); seq <= 4; seq++ {
+			echo := (&lmac.ICMPEcho{ID: pingID, Seq: seq,
+				Data: []byte(fmt.Sprintf("event-horizon %d", seq))}).Encode(true)
+			t0 := time.Now()
+			if err := sendIP(dstMAC, myIP, dst, lmac.IPProtoICMP, echo); err != nil {
+				fmt.Printf("  NET: ping send: %v\n", err)
 				continue
 			}
-			var ip lmac.IPv4
-			if err := ip.Decode(e.Payload); err != nil || ip.Proto != lmac.IPProtoICMP {
-				seq--
-				continue
+			deadline := time.After(3 * time.Second)
+		await:
+			for {
+				select {
+				case e := <-netCh:
+					if e.Ethertype != lmac.EtherTypeIP {
+						continue
+					}
+					var ip lmac.IPv4
+					if err := ip.Decode(e.Payload); err != nil || ip.Proto != lmac.IPProtoICMP {
+						continue
+					}
+					// Echo reply is type 0; a type-3 (unreachable) tells us the
+					// route exists but the destination refused — worth saying.
+					if len(ip.Payload) > 0 && ip.Payload[0] == 3 {
+						fmt.Printf("  NET: %v unreachable (ICMP type 3 code %d from %v)\n",
+							ipStr(dst), ip.Payload[1], ipStr(ip.Src))
+						return rx
+					}
+					var reply lmac.ICMPEcho
+					if err := reply.Decode(ip.Payload); err != nil {
+						continue
+					}
+					if len(reply.Data) == 0 || reply.ID != pingID || reply.Seq != seq || ip.Payload[0] != 0 {
+						continue
+					}
+					rx++
+					fmt.Printf("  NET: ping %v seq=%d rtt=%v\n", ipStr(dst), seq, time.Since(t0).Round(time.Millisecond))
+					break await
+				case <-deadline:
+					fmt.Printf("  NET: ping %v seq=%d timeout\n", ipStr(dst), seq)
+					break await
+				case <-ctx.Done():
+					return rx
+				}
 			}
-			var reply lmac.ICMPEcho
-			if err := reply.Decode(ip.Payload); err != nil {
-				seq--
-				continue
-			}
-			if len(reply.Data) == 0 || reply.ID != pingID || reply.Seq != seq {
-				seq--
-				continue
-			}
-			// Echo reply has type 0; Decode accepts 0 or 8 — verify reply.
-			if ip.Payload[0] != 0 {
-				seq--
-				continue
-			}
-			rx++
-			fmt.Printf("  NET: ping %v seq=%d rtt=%v\n", ipStr(gw), seq, time.Since(t0).Round(time.Millisecond))
-		case <-time.After(3 * time.Second):
-			fmt.Printf("  NET: ping %v seq=%d timeout\n", ipStr(gw), seq)
-		case <-ctx.Done():
-			return 1
 		}
-		_ = apMAC
+		return rx
 	}
-	fmt.Printf("  NET: %d/4 ping replies\n", rx)
+
+	rx := pingTarget(gw, gwMAC)
+	fmt.Printf("  NET: %d/4 ping replies from the gateway\n", rx)
+	_ = apMAC
+
+	// Optional extra hop: anything not on our subnet routes via the gateway.
+	if netTarget != zeroIP && netTarget != gw {
+		fmt.Printf("  NET: probing %v via the gateway ...\n", ipStr(netTarget))
+		if n := pingTarget(netTarget, gwMAC); n > 0 {
+			fmt.Printf("  NET: %v REACHABLE (%d/4)\n", ipStr(netTarget), n)
+		} else {
+			fmt.Printf("  NET: %v not reachable from %v — the AP may isolate this subnet\n",
+				ipStr(netTarget), ipStr(myIP))
+		}
+	}
+
 	if rx == 0 {
 		return 1
 	}

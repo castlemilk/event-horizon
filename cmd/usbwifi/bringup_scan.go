@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +41,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	connectChan := fs.Int("connect-channel", 0, "channel of the --connect SSID (0 = any)")
 	connectPass := fs.String("connect-pass", "", "WPA2 passphrase for --connect (empty = open network)")
 	connectBSSID := fs.String("connect-bssid", "", "target a specific BSSID (aa:bb:cc:dd:ee:ff) — required style for HIDDEN APs, which do not answer a broadcast-BSSID probe")
+	netTarget := fs.String("net-target", "", "after DHCP, also ping this IP via the gateway (e.g. 192.168.100.1, the Starlink terminal) to test routing off our subnet")
 	dump := fs.Bool("dump", false, "hex-dump every received frame (raw diagnostics)")
 	prescan := fs.Bool("prescan", false, "issue a scan before --connect to populate the BSS list")
 	skipNet := fs.Bool("skip-net", false, "stop after association+EAPOL (skip DHCP/ping validation)")
@@ -477,7 +479,16 @@ func runCmdBringup(ctx context.Context, args []string) int {
 						if *skipNet {
 							return 0
 						}
-						return runDhcpPing(ctx, s, vif, ind.APIdx, mac, ind.BSSID, netCh)
+						target := [4]byte{}
+						if *netTarget != "" {
+							ip := net.ParseIP(*netTarget)
+							if ip == nil || ip.To4() == nil {
+								log.Printf("bad --net-target %q", *netTarget)
+								return 1
+							}
+							copy(target[:], ip.To4())
+						}
+						return runDhcpPing(ctx, s, vif, ind.APIdx, mac, ind.BSSID, netCh, target)
 					}
 					return 0
 				}
