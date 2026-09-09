@@ -41,6 +41,8 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	connectChan := fs.Int("connect-channel", 0, "channel of the --connect SSID (0 = any)")
 	connectPass := fs.String("connect-pass", "", "WPA2 passphrase for --connect (empty = open network)")
 	connectBSSID := fs.String("connect-bssid", "", "target a specific BSSID (aa:bb:cc:dd:ee:ff) — required style for HIDDEN APs, which do not answer a broadcast-BSSID probe")
+	bridge := fs.Bool("bridge", false, "after DHCP, bridge the link to a utun so ordinary sockets (and pkg/starlink) can use the dongle; runs until interrupted")
+	bridgeRoute := fs.String("bridge-route", "192.168.100.1", "comma-separated hosts to route through the bridge (default: the Starlink terminal)")
 	netTarget := fs.String("net-target", "", "after DHCP, also ping this IP via the gateway (e.g. 192.168.100.1, the Starlink terminal) to test routing off our subnet")
 	dump := fs.Bool("dump", false, "hex-dump every received frame (raw diagnostics)")
 	prescan := fs.Bool("prescan", false, "issue a scan before --connect to populate the BSS list")
@@ -488,7 +490,18 @@ func runCmdBringup(ctx context.Context, args []string) int {
 							}
 							copy(target[:], ip.To4())
 						}
-						return runDhcpPing(ctx, s, vif, ind.APIdx, mac, ind.BSSID, netCh, target)
+						var routes []string
+						if *bridge {
+							for _, r := range strings.Split(*bridgeRoute, ",") {
+								if r = strings.TrimSpace(r); r != "" {
+									routes = append(routes, r)
+								}
+							}
+							if routes == nil {
+								routes = []string{}
+							}
+						}
+						return runDhcpPing(ctx, s, vif, ind.APIdx, mac, ind.BSSID, netCh, target, routes)
 					}
 					return 0
 				}
