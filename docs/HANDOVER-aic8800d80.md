@@ -69,13 +69,42 @@ over the dongle's link rather than the host's `en0`.
 
 ### The firmware set that works
 
-`~/.event-horizon/firmware/aic8800D80-hybrid/` — a hybrid:
+Four blobs, and only ONE of them is chip-specific:
 
-- `fmacfw_8800d80_u02_ipc.bin` — **324,848 B, carved from the vendor's own
-  Windows driver** (`aicloadfw.Sys`, chip_id=7 branch, loads at `0x120000`,
-  ends `0x16f4f0`).
-- `fw_adid` / `fw_patch` / `fw_patch_table` — from the Amlogic set (the
-  Windows BT patch overruns this chip's BT RAM at `0x210000`).
+| blob | size | source | obtainable automatically? |
+|---|---|---|---|
+| `fmacfw_8800d80_u02_ipc.bin` | 324,848 | **carved from the vendor's Windows driver** (`aicloadfw.Sys`, chip_id=7 branch, loads at `0x120000`) | only by carving — see below |
+| `fw_adid_8800d80_u02.bin` | 1,708 | universal | **yes**, `usbwifi firmware fetch` |
+| `fw_patch_8800d80_u02.bin` | 32,700 | radxa upstream | **yes**, `usbwifi firmware fetch` |
+| `fw_patch_table_8800d80_u02.bin` | 1,384 | radxa upstream | **yes**, `usbwifi firmware fetch` |
+
+**The Amlogic patch blobs are not required** (verified on hardware 2026-09-10).
+The long-standing "hybrid" set paired the carved fmacfw with Amlogic's
+`fw_patch`/`fw_patch_table`, and that was assumed to be load-bearing. It is not:
+the Amlogic blobs were adopted while the fmacfw was *also* wrong, so they were
+never the thing that mattered. Carved fmacfw + radxa's patch trio associates,
+completes the WPA2 handshake, takes a DHCP lease and carries live terminal
+telemetry identically.
+
+That matters because it removes the redistribution problem: three of the four
+blobs are fetchable with SHA256 verification, and the fourth comes off the
+**dongle's own ZeroCD volume**. Nothing needs shipping with the app.
+
+**Carving the fmacfw** (recipe verified by inspection; not yet implemented):
+the ZeroCD volume is FAT16, exactly 3,784,704 bytes, and holds a single
+payload — `Setup.exe`, 3,291,400 bytes, **Inno Setup 6.1.0**, with the drivers
+LZMA-compressed inside. A raw signature scan of the volume finds nothing, so
+the Inno unpack is unavoidable. Once `win10_x64/aicloadfw.Sys` is unpacked, the
+image is located by an exact two-word signature — `u32[0] = 0x001A0000`
+(initial SP), `u32[1] = 0x001201A5` (reset vector) — which yields exactly one
+hit. Its length is self-describing: the `u32` at blob+`0x454` is `0x0016F4F0`,
+and `0x16F4F0 - 0x120000` = 324,848. Pin `win10_x64` specifically: the
+`win7_x64` image is the same length but differs in 11 bytes.
+
+**Trap:** `usbwifi firmware fetch` also pulls radxa's `fmacfw_8800d80_u02.bin`
+(358,072 bytes), which does **not** work on chip 7. Flashing it is what
+produced the long-running "0x170000 write wall" red herring. Fetch is correct
+for the patch trio only.
 
 **Why this matters:** every other firmware we tried was wrong. The vendor
 selects firmware *by chip id*, and for chip 7 the correct image lives entirely
