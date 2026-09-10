@@ -20,7 +20,14 @@ public enum SupervisorError: LocalizedError {
 public actor RuntimeSupervisor: RuntimeSupervising {
     private var process: Process?
 
+    /// Why the last privileged start did not happen, for the UI to show.
+    /// Declining the prompt is a legitimate choice and the app should say so
+    /// rather than appearing broken.
+    public private(set) var lastPrivilegeError: String?
+
     public init() {}
+
+    public func privilegeError() -> String? { lastPrivilegeError }
 
     public func ensureDaemonRunning() async throws {
         if let proc = self.process, proc.isRunning {
@@ -38,70 +45,51 @@ public actor RuntimeSupervisor: RuntimeSupervising {
             return
         }
 
-        // The daemon needs root: it claims the USB dongle through libusb
-        // and creates the utun interface. Spawning it unprivileged
-        // produced a process that started, failed both, and left the app
-        // reporting success with nothing serving :8990.
+        // The daemon needs root: it claims the USB dongle through libusb and
+        // brings up the utun. There is no useful unprivileged mode — a daemon
+        // that can do neither is a daemon that cannot see a dongle.
         //
-        // /etc/sudoers.d/usbwifi permits this binary passwordlessly, so
-        // `sudo -n` works with no prompt and no TTY. If that rule is
-        // absent the spawn is retried unprivileged, which is enough for
-        // the read-only API, and the limitation is stated rather than
-        // hidden.
+        // So: try the passwordless sudoers rule first (silent on a developer
+        // box), and otherwise ASK, with the standard macOS authorization
+        // panel. The app used to fall back to starting it unprivileged and
+        // print advice about editing /etc/sudoers.d — which meant a normal
+        // user saw an app that launched, looked fine, and never worked, with
+        // no way to grant the permission it actually needed.
         print("[SUPERVISOR] Spawning usbwifi background process: \(binaryURL.path)...")
 
-        if try await spawn(binaryURL, privileged: true) {
-            print("[SUPERVISOR] usbwifi daemon started successfully (privileged).")
-            return
+        do {
+            let grant = try PrivilegedLauncher.run(
+                executable: binaryURL.path,
+                arguments: ["--port", "8990"],
+                detached: true
+            )
+            switch grant {
+            case .passwordless:
+                print("[SUPERVISOR] Started privileged via the existing sudoers rule.")
+            case .authorized:
+                print("[SUPERVISOR] Started privileged after authorization.")
+            }
+            if await waitForDaemon() {
+                return
+            }
+            print("[SUPERVISOR] Authorized, but the daemon never answered on :8990.")
+            throw SupervisorError.daemonWouldNotStart(binaryURL.path)
+        } catch let err as PrivilegedLauncher.LaunchError {
+            // Declining is a decision, not a crash. Report it as such and
+            // leave the app in client mode rather than pretending to run.
+            print("[SUPERVISOR] \(err.localizedDescription)")
+            lastPrivilegeError = err.localizedDescription
+            throw err
         }
-
-        print("[SUPERVISOR] Privileged start failed — /etc/sudoers.d/usbwifi may be missing.")
-        print("[SUPERVISOR] Retrying unprivileged: USB claiming and utun setup will not work.")
-
-        if try await spawn(binaryURL, privileged: false) {
-            print("[SUPERVISOR] usbwifi daemon started, but WITHOUT privileges.")
-            print("[SUPERVISOR] Install the sudoers rule, or start it manually:")
-            print("[SUPERVISOR]   sudo \(binaryURL.path) --port 8990")
-            return
-        }
-
-        throw SupervisorError.daemonWouldNotStart(binaryURL.path)
     }
 
-    /// Starts the daemon and waits for its API to answer.
-    /// Returns false if it never became reachable.
-    private func spawn(_ binaryURL: URL, privileged: Bool) async throws -> Bool {
-        let proc = Process()
-        if privileged {
-            // -n so a missing sudoers rule fails immediately instead of
-            // blocking on a password prompt the app cannot answer.
-            proc.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-            proc.arguments = ["-n", binaryURL.path, "--port", "8990"]
-        } else {
-            proc.executableURL = binaryURL
-            proc.arguments = ["--port", "8990"]
-        }
-
-        do {
-            try proc.run()
-        } catch {
-            print("[SUPERVISOR] Could not launch: \(error.localizedDescription)")
-            return false
-        }
-        self.process = proc
-
-        // The daemon scans the radio and brings up utun before it
-        // listens, which takes longer than the previous 5s allowance —
-        // so the app concluded it had failed while it was still starting.
+    /// Polls the API until the daemon answers. It scans the radio before it
+    /// listens, so this allows well past a naive few seconds — the app used to
+    /// conclude failure while the daemon was still starting.
+    private func waitForDaemon() async -> Bool {
         for _ in 0..<60 {
-            if await isDaemonReachable() {
-                return true
-            }
-            if !proc.isRunning {
-                print("[SUPERVISOR] Daemon exited during startup (status \(proc.terminationStatus)).")
-                return false
-            }
-            try await Task.sleep(for: .milliseconds(500))
+            if await isDaemonReachable() { return true }
+            try? await Task.sleep(for: .milliseconds(500))
         }
         return false
     }
