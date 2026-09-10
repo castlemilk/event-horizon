@@ -82,6 +82,19 @@ func main() {
 	// 3. Start HTTP / REST API Server
 	apiServer := api.NewServer(scanner, *apiPort)
 	apiServer.SimulateConnections = *simulate
+
+	// Give the API control of the real dongle link. /api/wifi/connect drives
+	// the HOST's CoreWLAN interface and correctly refuses to claim the dongle;
+	// /api/wifi/link is the one that actually brings the radio up, using the
+	// same code path as `cmdctl link` so the two cannot diverge.
+	linkSvc := NewLinkService()
+	apiServer.LinkStatus = func() any { return linkSvc.Status() }
+	apiServer.LinkStart = func(ssid, pass string, channel int, bssid, route string) (any, error) {
+		return linkSvc.Start(LinkOptions{SSID: ssid, Pass: pass, Channel: channel, BSSID: bssid, Route: route})
+	}
+	apiServer.LinkStop = linkSvc.Stop
+	defer linkSvc.Stop()
+
 	apiServer.Start()
 
 	// 4. No utun here — the link owns it.

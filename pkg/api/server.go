@@ -29,6 +29,21 @@ type Server struct {
 	// SimulateConnections forces the simulated 802.11 handshake path even
 	// when a real Wi-Fi interface is present (used by tests / demo mode).
 	SimulateConnections bool
+
+	// Dongle link control, injected by the daemon. This package cannot import
+	// package main, where the link lives, so the daemon hands in closures.
+	// When they are nil the routes are simply not registered, which is
+	// honest: a build without link control should not advertise it.
+	LinkStatus func() any
+	LinkStart  func(ssid, pass string, channel int, bssid, route string) (any, error)
+	LinkStop   func()
+}
+
+// writeJSONResponse writes v as JSON with the given status.
+func writeJSONResponse(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func NewServer(scanner *wifi.Scanner, port int) *Server {
@@ -66,7 +81,6 @@ type Response struct {
 func (s *Server) Start() {
 	mux := http.NewServeMux()
 
-	// CORS Middleware
 	corsHandler := func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -79,6 +93,54 @@ func (s *Server) Start() {
 			next(w, r)
 		}
 	}
+
+	// Dongle link control. These are the only routes that drive the REAL
+	// radio: /api/wifi/connect deliberately refuses, because it would
+	// otherwise associate the HOST's CoreWLAN interface and report an SSID
+	// the dongle was never on. Injected as closures because the link lives in
+	// package main and this package cannot import it.
+	if s.LinkStatus != nil {
+		mux.HandleFunc("/api/wifi/link", corsHandler(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				writeJSONResponse(w, http.StatusOK, s.LinkStatus())
+			case http.MethodPost:
+				if s.LinkStart == nil {
+					writeJSONResponse(w, http.StatusServiceUnavailable,
+						map[string]string{"error": "link control is not available in this build"})
+					return
+				}
+				var req struct {
+					SSID    string `json:"ssid"`
+					Pass    string `json:"pass"`
+					Channel int    `json:"channel"`
+					BSSID   string `json:"bssid"`
+					Route   string `json:"route"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.SSID == "" {
+					writeJSONResponse(w, http.StatusBadRequest,
+						map[string]string{"error": "ssid is required"})
+					return
+				}
+				st, err := s.LinkStart(req.SSID, req.Pass, req.Channel, req.BSSID, req.Route)
+				if err != nil {
+					writeJSONResponse(w, http.StatusConflict,
+						map[string]any{"error": err.Error(), "status": st})
+					return
+				}
+				writeJSONResponse(w, http.StatusAccepted, st)
+			case http.MethodDelete:
+				if s.LinkStop != nil {
+					s.LinkStop()
+				}
+				writeJSONResponse(w, http.StatusOK, s.LinkStatus())
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		}))
+	}
+
+	// CORS Middleware
 
 	// GET /api/wifi/scan - List all discovered Wi-Fi hotspots (real radio scan)
 	mux.HandleFunc("/api/wifi/scan", corsHandler(func(w http.ResponseWriter, r *http.Request) {

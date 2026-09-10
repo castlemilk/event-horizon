@@ -108,19 +108,37 @@ chmod 644 "${CONTENTS_DIR}/Info.plist"
 echo "⚙️ [4/5] Code signing App Bundle..."
 xattr -cr "${APP_BUNDLE}" 2>/dev/null || true
 
+# Which entitlements to sign with.
+#
+# The default is the DIRECT (non-sandboxed) build, because the sandboxed one
+# cannot drive a dongle at all: raw libusb is unavailable inside the App
+# Sandbox, and the supervisor's authorization prompt is refused outright
+# (AppleScript -60005, which reports as a wrong password but is the sandbox
+# declining to escalate). Building the sandboxed flavour by default produced an
+# app that launched, looked healthy, and could never claim hardware.
+#
+# EH_SANDBOX=1 selects the App Store flavour, which is a viewer only.
+if [ "${EH_SANDBOX:-0}" = "1" ]; then
+    ENTITLEMENTS="Entitlements.plist"
+    echo "   • signing SANDBOXED (App Store) — this build CANNOT claim a dongle"
+else
+    ENTITLEMENTS="Entitlements-direct.plist"
+    echo "   • signing DIRECT (non-sandboxed) — required for USB + privilege escalation"
+fi
+
 APP_CERT="3rd Party Mac Developer Application: Ben Ebsworth (WFTX6CN23F)"
 INSTALLER_CERT="3rd Party Mac Developer Installer: Ben Ebsworth (WFTX6CN23F)"
 
 if security find-identity -v | grep -q "${APP_CERT}"; then
     echo "  ✍️ Signing executables with '${APP_CERT}'..."
-    codesign --force --sign "${APP_CERT}" --entitlements Entitlements.plist "${FRAMEWORKS_DIR}"/*.dylib 2>/dev/null || true
-    codesign --force --sign "${APP_CERT}" --entitlements Entitlements.plist "${RESOURCES_DIR}/usbwifi" 2>/dev/null || true
-    codesign --force --sign "${APP_CERT}" --entitlements Entitlements.plist "${MACOS_DIR}/usbwifi" 2>/dev/null || true
-    codesign --force --options runtime --sign "${APP_CERT}" --entitlements Entitlements.plist "${MACOS_DIR}/EventHorizonApp"
-    codesign --force --deep --options runtime --sign "${APP_CERT}" --entitlements Entitlements.plist "${APP_BUNDLE}"
+    codesign --force --sign "${APP_CERT}" --entitlements "${ENTITLEMENTS}" "${FRAMEWORKS_DIR}"/*.dylib 2>/dev/null || true
+    codesign --force --sign "${APP_CERT}" --entitlements "${ENTITLEMENTS}" "${RESOURCES_DIR}/usbwifi" 2>/dev/null || true
+    codesign --force --sign "${APP_CERT}" --entitlements "${ENTITLEMENTS}" "${MACOS_DIR}/usbwifi" 2>/dev/null || true
+    codesign --force --options runtime --sign "${APP_CERT}" --entitlements "${ENTITLEMENTS}" "${MACOS_DIR}/EventHorizonApp"
+    codesign --force --deep --options runtime --sign "${APP_CERT}" --entitlements "${ENTITLEMENTS}" "${APP_BUNDLE}"
     echo "  ✅ App Bundle signed successfully with Developer Certificate."
 else
-    codesign --force --deep --sign - --entitlements Entitlements.plist "${APP_BUNDLE}" || true
+    codesign --force --deep --sign - --entitlements "${ENTITLEMENTS}" "${APP_BUNDLE}" || true
     echo "  ⚠️ App Bundle signed ad-hoc."
 fi
 
