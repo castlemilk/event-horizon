@@ -1,4 +1,55 @@
 import Foundation
+import os
+
+/// Supervisor output goes to the unified log, not stdout.
+///
+/// These were print() calls, which is invisible for a GUI app: launched from
+/// Finder there is no terminal attached, and print() does not reach the
+/// unified log either. So when the daemon failed to start there was no way to
+/// find out why — `log show` returned nothing and running the bundle
+/// executable by hand produced no output because the SwiftUI .task that calls
+/// bootstrap() only fires once a window appears.
+let supervisorLog = SupervisorLog()
+
+/// Writes to the unified log AND to ~/Library/Logs/EventHorizon/supervisor.log.
+///
+/// The file is the point. These messages were print() calls, invisible for an
+/// app launched from Finder; switching to os_log did not help either — no
+/// entries reached the log store, so the reason the daemon would not start
+/// stayed unknowable from outside the process. A plain file always works, and
+/// startup diagnostics are exactly what someone needs when the app looks alive
+/// and does nothing.
+public struct SupervisorLog {
+    private let logger = Logger(subsystem: "com.castlemilk.eventhorizon", category: "supervisor")
+
+    public func notice(_ message: String) {
+        logger.notice("\(message, privacy: .public)")
+        Self.append(message)
+    }
+
+    static let fileURL: URL = {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/EventHorizon", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("supervisor.log")
+    }()
+
+    private static let queue = DispatchQueue(label: "com.castlemilk.eventhorizon.supervisorlog")
+
+    private static func append(_ message: String) {
+        queue.async {
+            let line = "\(ISO8601DateFormatter().string(from: Date()))  \(message)\n"
+            guard let data = line.data(using: .utf8) else { return }
+            if let h = try? FileHandle(forWritingTo: fileURL) {
+                defer { try? h.close() }
+                _ = try? h.seekToEnd()
+                try? h.write(contentsOf: data)
+            } else {
+                try? data.write(to: fileURL)
+            }
+        }
+    }
+}
 
 public protocol RuntimeSupervising: Sendable {
     func ensureDaemonRunning() async throws
@@ -30,6 +81,7 @@ public actor RuntimeSupervisor: RuntimeSupervising {
     public func privilegeError() -> String? { lastPrivilegeError }
 
     public func ensureDaemonRunning() async throws {
+        supervisorLog.notice("ensureDaemonRunning: entered")
         if let proc = self.process, proc.isRunning {
             if await isDaemonReachable() {
                 return
@@ -41,7 +93,7 @@ public actor RuntimeSupervisor: RuntimeSupervising {
 
         // 2. Resolve daemon executable path (bundle resource, MacOS directory, or relative bin)
         guard let binaryURL = resolveDaemonBinary() else {
-            print("[SUPERVISOR] Warning: Could not locate bundled usbwifi binary. Using standalone client mode.")
+            supervisorLog.notice("Warning: Could not locate bundled usbwifi binary. Using standalone client mode.")
             return
         }
 
@@ -55,7 +107,7 @@ public actor RuntimeSupervisor: RuntimeSupervising {
         // print advice about editing /etc/sudoers.d — which meant a normal
         // user saw an app that launched, looked fine, and never worked, with
         // no way to grant the permission it actually needed.
-        print("[SUPERVISOR] Spawning usbwifi background process: \(binaryURL.path)...")
+        supervisorLog.notice("Spawning usbwifi background process: \(binaryURL.path)...")
 
         do {
             let grant = try PrivilegedLauncher.run(
@@ -65,19 +117,19 @@ public actor RuntimeSupervisor: RuntimeSupervising {
             )
             switch grant {
             case .passwordless:
-                print("[SUPERVISOR] Started privileged via the existing sudoers rule.")
+                supervisorLog.notice("Started privileged via the existing sudoers rule.")
             case .authorized:
-                print("[SUPERVISOR] Started privileged after authorization.")
+                supervisorLog.notice("Started privileged after authorization.")
             }
             if await waitForDaemon() {
                 return
             }
-            print("[SUPERVISOR] Authorized, but the daemon never answered on :8990.")
+            supervisorLog.notice("Authorized, but the daemon never answered on :8990.")
             throw SupervisorError.daemonWouldNotStart(binaryURL.path)
         } catch let err as PrivilegedLauncher.LaunchError {
             // Declining is a decision, not a crash. Report it as such and
             // leave the app in client mode rather than pretending to run.
-            print("[SUPERVISOR] \(err.localizedDescription)")
+            supervisorLog.notice("\(err.localizedDescription)")
             lastPrivilegeError = err.localizedDescription
             throw err
         }
