@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
@@ -16,7 +17,7 @@ import (
 // then ICMP echo to the gateway. It proves the data path carries real IP,
 // which is the precondition for the Starlink interrogation. Returns 0 when
 // at least one ping reply arrives.
-func runDhcpPing(ctx context.Context, s *session, vif, apIdx uint8, staMAC, apMAC [6]byte, netCh <-chan lmac.Ethernet, netTarget [4]byte, bridgeRoutes []string) int {
+func runDhcpPing(ctx context.Context, s *session, vif, apIdx uint8, staMAC, apMAC [6]byte, netCh <-chan lmac.Ethernet, netTarget [4]byte, bridgeRoutes []string, linkDown *atomic.Bool) int {
 	bcast := [6]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}
 	zeroIP := [4]byte{}
 	bcastIP := [4]byte{255, 255, 255, 255}
@@ -235,7 +236,7 @@ waitARP:
 	// Hand the link to a utun so ordinary sockets can use it. This does not
 	// return until the context is cancelled.
 	if bridgeRoutes != nil {
-		return runBridge(ctx, s, vif, apIdx, staMAC, myIP, ack.Subnet, gw, gwMAC, netCh, bridgeRoutes)
+		return runBridge(ctx, s, vif, apIdx, staMAC, myIP, ack.Subnet, gw, gwMAC, netCh, bridgeRoutes, linkDown)
 	}
 	return 0
 }

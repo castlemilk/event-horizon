@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/event"
@@ -73,11 +74,18 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	connIndCh := make(chan lmac.ConnectInd, 4)
 	memReadCh := make(chan []byte, 4)
 	eapolCh := make(chan []byte, 16)
+	// Set when the firmware reports the link dropped (SM_DISCONNECT_IND).
+	var linkDown atomic.Bool
 	netCh := make(chan lmac.Ethernet, 32)
 
 	d := &event.Dispatch{
 		OnResetCfm: func() { fmt.Println("  MM_RESET_CFM ok") },
 		OnDisconnectInd: func(ind lmac.DisconnectInd) {
+			// Record it so the bridge can stop claiming a working link. Without
+			// this the bridge kept transmitting after a reason-16 deauth, with
+			// its rx counter frozen and its tx counter still climbing —
+			// indistinguishable from a healthy idle link.
+			linkDown.Store(true)
 			// The firmware's own account of why the link dropped. Reason 15
 			// ("4-way handshake timeout") means the AP never accepted our
 			// msg2/msg4 — it is the difference between "we are done" and
@@ -511,7 +519,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 								routes = []string{}
 							}
 						}
-						return runDhcpPing(ctx, s, vif, ind.APIdx, mac, ind.BSSID, netCh, target, routes)
+						return runDhcpPing(ctx, s, vif, ind.APIdx, mac, ind.BSSID, netCh, target, routes, &linkDown)
 					}
 					return 0
 				}

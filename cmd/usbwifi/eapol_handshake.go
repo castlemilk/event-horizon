@@ -287,5 +287,94 @@ haveMsg3:
 		return 1
 	}
 	fmt.Println("  EAPOL: handshake complete — controlled port open")
+
+	// The 4-way handshake establishes the PAIRWISE key. The group key has its
+	// own lifetime, and the AP rekeys it on a timer with a separate 2-way
+	// exchange. Without a handler for that, the link dies at the first rekey:
+	// observed as SM_DISCONNECT_IND reason 16 ("group-key handshake timeout")
+	// after about an hour, with the bridge still transmitting into a dead link
+	// and its rx counter frozen.
+	go maintainGroupKey(ctx, s, vif, apIdx, bssid, staMAC, kck, kek, eapolCh)
 	return 0
+}
+
+// maintainGroupKey answers the AP's group-key (GTK) rekeys for the life of the
+// link.
+//
+// The exchange is the pairwise handshake in miniature: the AP sends an
+// EAPOL-Key with the Group bit clear of Pairwise, carrying an encrypted GTK;
+// we verify the MIC with the KCK we already have, unwrap the key data with the
+// KEK, install the new GTK, and echo a MIC'd reply on the same replay counter.
+// Miss it and the AP deauthenticates.
+func maintainGroupKey(
+	ctx context.Context, s *session, vif, apIdx uint8,
+	bssid, staMAC [6]byte, kck, kek []byte, eapolCh <-chan []byte,
+) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case f := <-eapolCh:
+			var k lmac.KeyFrame
+			if err := k.Decode(f); err != nil {
+				continue
+			}
+			// Pairwise traffic here would be a full reauthentication, which
+			// this loop is not equipped to run; leave it alone.
+			if k.Pairwise() || k.KeyInfo&lmac.KeyInfoMIC == 0 {
+				continue
+			}
+			if !lmac.VerifyMIC(kck, &k) {
+				fmt.Println("  EAPOL: group rekey MIC INVALID — ignoring")
+				continue
+			}
+			gtk, gtkIdx, err := lmac.ParseKeyData(kek, k.KeyData,
+				k.KeyInfo&lmac.KeyInfoEncrypted != 0)
+			if err != nil {
+				fmt.Printf("  EAPOL: group rekey — could not read the new GTK: %v\n", err)
+				continue
+			}
+
+			// Install before acknowledging: the AP may start using the new key
+			// as soon as our reply lands.
+			c, cancel := context.WithTimeout(ctx, 4*time.Second)
+			err = s.submitter.Submit(c, &lmac.KeyAddReq{
+				KeyIdx: gtkIdx, StaIdx: 0xFF, Key: gtk,
+				Cipher: lmac.CipherCCMP, VifIdx: vif, Pairwise: false,
+			})
+			cancel()
+			if err != nil {
+				fmt.Printf("  EAPOL: group rekey — MM_KEY_ADD got no CFM: %v\n", err)
+				continue
+			}
+
+			// Reply: Group + MIC + Secure, same replay counter, no key data.
+			reply := &lmac.KeyFrame{
+				Version: k.Version,
+				KeyInfo: lmac.KeyInfoVerHMACSHA1 | lmac.KeyInfoMIC | lmac.KeyInfoSecure |
+					(k.KeyInfo & lmac.KeyInfoIndexMask),
+				Replay: k.Replay,
+			}
+			reply.MIC = [16]byte{}
+			enc := reply.Encode()
+			for i := lmac.MICOffset; i < lmac.MICOffset+16 && i < len(enc); i++ {
+				enc[i] = 0
+			}
+			copy(reply.MIC[:], lmac.ComputeMIC(kck, enc))
+
+			tx := &lmac.TxData{
+				DA: bssid, SA: staMAC, Ethertype: lmac.EAPOLEthertype,
+				VifIdx: vif, StaIdx: apIdx, Payload: reply.Encode(),
+			}
+			frame, encErr := tx.Encode()
+			if encErr != nil {
+				continue
+			}
+			if err := s.sess.BulkOutData(ctx, frame); err != nil {
+				fmt.Printf("  EAPOL: group rekey — reply send failed: %v\n", err)
+				continue
+			}
+			fmt.Printf("  EAPOL: group rekey handled (new GTK idx %d, %d bytes)\n", gtkIdx, len(gtk))
+		}
+	}
 }

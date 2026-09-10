@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
@@ -29,7 +30,7 @@ import (
 // Host en0 is deliberately untouched. We add a host route for the terminal
 // only, so normal traffic keeps its existing path.
 func runBridge(ctx context.Context, s *session, vif, apIdx uint8, staMAC [6]byte,
-	myIP, mask, gw [4]byte, gwMAC [6]byte, netCh <-chan lmac.Ethernet, routes []string) int {
+	myIP, mask, gw [4]byte, gwMAC [6]byte, netCh <-chan lmac.Ethernet, routes []string, linkDown *atomic.Bool) int {
 
 	iface, err := tun.NewUtun()
 	if err != nil {
@@ -207,6 +208,15 @@ func runBridge(ctx context.Context, s *session, vif, apIdx uint8, staMAC [6]byte
 	for {
 		select {
 		case <-tick.C:
+			// A deauth leaves the utun and the route in place, so without this
+			// the bridge looks healthy while nothing crosses it. Say so, and
+			// stop rather than pretending to carry traffic.
+			if linkDown != nil && linkDown.Load() {
+				fmt.Printf("  BRIDGE: LINK IS DOWN — the firmware reported a disconnect. "+
+					"Final counters tx=%d rx=%d dropped=%d\n", txPkts, rxPkts, txDrop)
+				fmt.Println("  BRIDGE: stopping; re-run `usbwifi cmdctl link` after a replug.")
+				return 1
+			}
 			fmt.Printf("  BRIDGE: tx=%d rx=%d dropped=%d\n", txPkts, rxPkts, txDrop)
 		case <-stop:
 			fmt.Printf("  BRIDGE: stopped (tx=%d rx=%d dropped=%d)\n", txPkts, rxPkts, txDrop)

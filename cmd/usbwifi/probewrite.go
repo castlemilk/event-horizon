@@ -9,11 +9,11 @@
 //
 // This run verifies the loader's skip workaround on a FRESH device:
 //
-//   P1  word write @ 0x1701e0 — pins the trigger to exactly 0x1701e4
-//       (echo evidence says 0x1701e0..e3 are normal SRAM)
-//   P2  16B chunks 0x1701f0..0x171000 — writes PAST the trigger must
-//       land fine when the trigger word is never touched
-//   P3  readback sweep to confirm the data actually stuck
+//	P1  word write @ 0x1701e0 — pins the trigger to exactly 0x1701e4
+//	    (echo evidence says 0x1701e0..e3 are normal SRAM)
+//	P2  16B chunks 0x1701f0..0x171000 — writes PAST the trigger must
+//	    land fine when the trigger word is never touched
+//	P3  readback sweep to confirm the data actually stuck
 //
 // If P2 lands, `task aic:e2e` runs the full upload with the skip and
 // START_APPs the firmware.
