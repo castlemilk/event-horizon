@@ -16,7 +16,21 @@
 #        so every firmware boot experiment starts with a replug through here.
 set -u
 
-BIN="$(cd "$(dirname "$0")/.." && pwd)/bin/usbwifi"
+# Locate the loader binary. USBWIFI_BIN wins when set — "usbwifi cmdctl link"
+# sets it to its own path, which is the only way this works inside the app
+# bundle: there the script sits in Contents/Resources, so the dev layout
+# (../bin/usbwifi) would resolve to Contents/bin/usbwifi and not exist.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+if [ -n "${USBWIFI_BIN:-}" ] && [ -x "${USBWIFI_BIN}" ]; then
+  BIN="${USBWIFI_BIN}"
+elif [ -x "${HERE}/../bin/usbwifi" ]; then
+  BIN="${HERE}/../bin/usbwifi"   # dev checkout
+elif [ -x "${HERE}/usbwifi" ]; then
+  BIN="${HERE}/usbwifi"          # bundled beside this script
+else
+  echo "[recover] cannot find the usbwifi binary (set USBWIFI_BIN)" >&2
+  exit 1
+fi
 FWDIR="${1:-$HOME/.event-horizon/firmware/aic8800D80}"
 FWNAME="${2:-}"
 # Third arg "full" enables the no-zone-skip full-image write (genuine-RAM test).

@@ -5,10 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
+
+	"github.com/castlemilk/event-horizon/pkg/aic8800d80/protocol"
 )
 
 // runCmdLink brings the whole dongle link up with one command: flash if the
@@ -50,38 +50,54 @@ func runCmdLink(ctx context.Context, args []string) int {
 	}
 
 	// --- 1. work out what state the chip is in -------------------------
-	st := detectUSBState()
-	fmt.Printf("link: dongle is %s\n", st)
-	switch st {
-	case usbAbsent:
-		fmt.Println("link: no AIC dongle found on USB. Plug it in and run again.")
+	// Everything here is in-process: protocol.DetectAICStage reads the USB bus
+	// through libusb, and runBootstrap does the ZeroCD eject and the firmware
+	// upload in Go. There is no shell script and no ioreg — the binary is
+	// self-contained, so it behaves the same from a dev checkout and from
+	// inside the app bundle.
+	stage, err := protocol.DetectAICStage(ctx)
+	if err != nil {
+		fmt.Println("link: no AIC8800D80 on the USB bus. Plug the dongle in and run again.")
 		return 1
+	}
 
-	case usbMSC, usbBootROM:
+	switch stage {
+	case protocol.StageZeroCD, protocol.StageBootROM:
 		if *skipFlash {
-			fmt.Println("link: --skip-flash given, but the chip is not running firmware yet; ignoring it.")
+			fmt.Println("link: --skip-flash was given, but the chip is not running firmware yet; ignoring it.")
 		}
-		fmt.Println("link: flashing firmware ...")
-		if rc := flashFirmware(dir); rc != 0 {
+		if !firmwareSetPresent(dir) {
+			fmt.Printf("link: no firmware set at %s\n", dir)
+			fmt.Println("      The blobs this chip needs are carved from the vendor driver on the")
+			fmt.Println("      dongle's own ZeroCD volume; see docs/HANDOVER-aic8800d80.md section 2.")
+			return 1
+		}
+		fmt.Printf("link: flashing firmware from %s ...\n", dir)
+		if rc := runBootstrap([]string{"--firmware-dir", dir}); rc != 0 {
+			fmt.Println("link: firmware bootstrap failed.")
 			return rc
 		}
 
-	case usbOperational:
-		// Firmware is already running. That is fine only if nothing has used
-		// it yet: this firmware allows exactly one MM_RESET per instance, and
-		// the connect step spends it. A second run against the same instance
-		// silently produces a deaf radio, so refuse by default rather than
-		// hand back results that cannot be trusted.
+	case protocol.StageOperational:
+		// Firmware is already running. That is only safe if nothing has used it
+		// yet: this firmware allows one MM_RESET per instance and the connect
+		// spends it, so a second run against the same instance goes deaf
+		// without saying so. Refuse rather than return results that cannot be
+		// trusted.
 		if !*skipFlash && !*force {
-			fmt.Println("link: the chip is already running firmware, so this may be a")
-			fmt.Println("      used instance — the radio allows one MM_RESET per flash and a")
-			fmt.Println("      second run against it goes deaf without saying so.")
-			fmt.Println("      Unplug the dongle for ~10s and replug to get a clean flash,")
-			fmt.Println("      or pass --skip-flash if you know this instance is untouched.")
+			fmt.Println("link: the chip is already running firmware, so this may be a used")
+			fmt.Println("      instance — the radio allows one MM_RESET per flash and the connect")
+			fmt.Println("      spends it. A second run goes deaf without reporting anything.")
+			fmt.Println("      Unplug the dongle for ~10s and replug for a clean flash, or pass")
+			fmt.Println("      --skip-flash if you know this instance is untouched.")
 			return 1
 		}
-		fmt.Println("link: reusing the running firmware instance (results are only")
-		fmt.Println("      trustworthy if nothing has associated on it yet).")
+		fmt.Println("link: reusing the running firmware instance (trustworthy only if")
+		fmt.Println("      nothing has associated on it yet).")
+
+	default:
+		fmt.Println("link: the dongle is in an indeterminate USB state. Replug it and run again.")
+		return 1
 	}
 
 	// --- 2. stack_start, in its own session ----------------------------
@@ -115,85 +131,57 @@ func runCmdLink(ctx context.Context, args []string) int {
 	return runCmdBringup(ctx, bringup)
 }
 
-// USB states the AIC chip presents, in the order it moves through them.
-type usbState string
-
-const (
-	usbAbsent      usbState = "absent"
-	usbMSC         usbState = "ZeroCD mass-storage (a69c:5723) — flashable"
-	usbBootROM     usbState = "boot ROM (a69c:8d80) — flashable"
-	usbOperational usbState = "operational (368b:8d85) — firmware already running"
-)
-
-// detectUSBState reports which identity the dongle is currently presenting.
-// ioreg is the same source scripts/aic-zerocd-eject.sh matches on, so the two
-// agree about what state the chip is in.
-func detectUSBState() usbState {
-	out, err := exec.Command("ioreg", "-r", "-c", "IOUSBHostDevice", "-l").Output()
-	if err != nil {
-		return usbAbsent
-	}
-	s := string(out)
-	switch {
-	case strings.Contains(s, `"idProduct" = 22307`): // 0x5723
-		return usbMSC
-	case strings.Contains(s, `"idProduct" = 36224`): // 0x8d80
-		return usbBootROM
-	case strings.Contains(s, `"idProduct" = 36229`): // 0x8d85
-		return usbOperational
-	}
-	return usbAbsent
-}
-
-// defaultFirmwareDir is the hybrid firmware set that actually works on this
-// chip — the fmacfw carved out of the vendor's Windows driver plus the Amlogic
-// patch blobs. See docs/HANDOVER-aic8800d80.md section 2 for why every other
-// combination is wrong.
-func defaultFirmwareDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".event-horizon/firmware/aic8800D80-hybrid"
-	}
-	return filepath.Join(home, ".event-horizon", "firmware", "aic8800D80-hybrid")
-}
-
-// flashFirmware shells out to the recovery script, which owns the ZeroCD eject
-// dance (the kernel's mass-storage driver has to deliver the SCSI eject —
-// libusb can never win those pipes) and then runs the loader.
+// defaultFirmwareDir locates the blob set the loader needs.
 //
-// The script is located relative to this executable rather than the working
-// directory, because it is normally invoked through sudo from anywhere.
-func flashFirmware(dir string) int {
-	script, err := findScript("aic-zerocd-eject.sh")
-	if err != nil {
-		fmt.Printf("link: %v\n", err)
-		return 1
+// A user-installed set wins: it is the one that has been exercised on hardware,
+// and firmware pairings are chip-specific enough that silently preferring a
+// bundled copy could flash the wrong image. Otherwise fall back to a copy
+// shipped beside the binary, so the packaged app works on a machine that has
+// never run the dev tooling.
+func defaultFirmwareDir() string {
+	const set = "aic8800D80-hybrid"
+	if home, err := os.UserHomeDir(); err == nil {
+		if p := filepath.Join(home, ".event-horizon", "firmware", set); firmwareSetPresent(p) {
+			return p
+		}
 	}
-	cmd := exec.Command(script, dir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("link: firmware flash failed: %v\n", err)
-		return 1
-	}
-	return 0
-}
-
-// findScript locates a repo script from the running binary's location
-// (bin/usbwifi -> ../scripts/<name>), falling back to the working directory.
-func findScript(name string) (string, error) {
-	var candidates []string
 	if exe, err := os.Executable(); err == nil {
 		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = resolved
 		}
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "..", "scripts", name))
-	}
-	candidates = append(candidates, filepath.Join("scripts", name))
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return filepath.Abs(c)
+		dir := filepath.Dir(exe)
+		for _, p := range []string{
+			filepath.Join(dir, "firmware", set),                    // beside the binary
+			filepath.Join(dir, "..", "Resources", "firmware", set), // inside the app bundle
+		} {
+			if firmwareSetPresent(p) {
+				if abs, err := filepath.Abs(p); err == nil {
+					return abs
+				}
+				return p
+			}
 		}
 	}
-	return "", fmt.Errorf("cannot find scripts/%s (looked in %s)", name, strings.Join(candidates, ", "))
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".event-horizon", "firmware", set)
+	}
+	return filepath.Join(".event-horizon", "firmware", set)
+}
+
+// firmwareSetPresent reports whether a directory holds every blob the loader
+// needs. A directory that merely exists is not enough: a half-populated one
+// fails mid-flash, and recovering from that costs a physical replug.
+func firmwareSetPresent(dir string) bool {
+	for _, f := range []string{
+		"fmacfw_8800d80_u02_ipc.bin",
+		"fw_adid_8800d80_u02.bin",
+		"fw_patch_8800d80_u02.bin",
+		"fw_patch_table_8800d80_u02.bin",
+	} {
+		st, err := os.Stat(filepath.Join(dir, f))
+		if err != nil || st.Size() == 0 {
+			return false
+		}
+	}
+	return true
 }
