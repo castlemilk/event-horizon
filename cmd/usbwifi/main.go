@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/castlemilk/event-horizon/pkg/api"
-	"github.com/castlemilk/event-horizon/pkg/tun"
 	"github.com/castlemilk/event-horizon/pkg/usb"
 	"github.com/castlemilk/event-horizon/pkg/wifi"
 )
@@ -41,8 +40,8 @@ func main() {
 	}
 
 	stop := flag.Bool("stop", false, "Signal a running daemon to exit, then return")
-	targetSSID := flag.String("ssid", "", "Target Wi-Fi SSID to connect (real association only when a passphrase is supplied)")
-	passphrase := flag.String("passphrase", "", "WPA2/WPA3 passphrase for the target SSID (required for a real connection)")
+	targetSSID := flag.String("ssid", "", "SSID for the HOST's built-in Wi-Fi adapter to join (this is NOT the USB dongle — see `cmdctl link`)")
+	passphrase := flag.String("passphrase", "", "passphrase for the host adapter (required for a real association)")
 	apiPort := flag.Int("port", 8990, "HTTP API Server port")
 	simulate := flag.Bool("simulate", false, "Force simulated 802.11 handshake instead of a real association")
 	flag.Parse()
@@ -85,41 +84,52 @@ func main() {
 	apiServer.SimulateConnections = *simulate
 	apiServer.Start()
 
-	// 4. Initialize macOS Virtual utun Interface
-	utunDev, err := tun.NewUtun()
-	if err != nil {
-		log.Printf("[TUN] Warning: %v (utun creation requires root/sudo privileges)", err)
-	} else {
-		defer utunDev.Close()
-		utunDev.ConfigureIP("192.168.100.2", "255.255.255.0", "192.168.100.1")
-		utunDev.AddStarlinkRoute()
-		pump := tun.StartPacketPump(utunDev)
-		defer pump.Stop()
-	}
+	// 4. No utun here — the link owns it.
+	//
+	// This used to create one unconditionally and configure it as
+	// 192.168.100.2/24 via 192.168.100.1: an address invented at compile time.
+	// The dongle's real address comes from DHCP on whatever network it joins
+	// (192.168.2.243/24 via 192.168.2.1 on the network this was developed
+	// against), so the interface asserted a lease no server had issued and
+	// claimed a route to a terminal it could not reach.
+	//
+	// It also collided with the real thing: `usbwifi cmdctl link` brings the
+	// dongle up and creates its own utun with the lease it actually obtained,
+	// plus a host route for the terminal. Two utuns both claiming to own
+	// 192.168.100.1 is a coin toss over which one the kernel routes through.
+	//
+	// The daemon observes the link; it does not invent an interface.
+	log.Printf("[TUN] no utun created by the daemon — use `usbwifi cmdctl link` to bring the dongle up")
 
-	// 5. Optional Real Association to a target hotspot
+	// 5. Optional association of the HOST's built-in adapter.
+	//
+	// This drives CoreWLAN/networksetup, i.e. the Mac's own Wi-Fi — it has
+	// nothing to do with the USB dongle. The logs used to say "Performing real
+	// Wi-Fi association" and then SetConnected(ssid), so the daemon's API
+	// reported a connection that a reader would naturally attribute to the
+	// dongle. The dongle is brought up by `usbwifi cmdctl link`.
 	if *targetSSID != "" && *passphrase != "" && !*simulate {
-		log.Printf("[HOTSPOT] Performing real Wi-Fi association to '%s'...", *targetSSID)
+		log.Printf("[HOST-WIFI] Associating the HOST adapter (not the dongle) to '%s'...", *targetSSID)
 		if err := wifi.AssociateViaCoreWLAN(*targetSSID, *passphrase); err != nil {
-			log.Printf("[HOTSPOT] CoreWLAN association failed (%v); falling back to networksetup", err)
+			log.Printf("[HOST-WIFI] CoreWLAN association failed (%v); falling back to networksetup", err)
 			if iface, ifaceErr := wifi.FindWiFiInterface(); ifaceErr == nil {
 				if err := wifi.AssociateToNetwork(iface, *targetSSID, *passphrase); err != nil {
-					log.Printf("[HOTSPOT] networksetup association failed: %v", err)
+					log.Printf("[HOST-WIFI] networksetup association failed: %v", err)
 				} else {
 					scanner.SetConnected(*targetSSID)
-					log.Printf("[HOTSPOT] Successfully connected to '%s'", *targetSSID)
+					log.Printf("[HOST-WIFI] Host adapter connected to '%s'", *targetSSID)
 				}
 			} else {
-				log.Printf("[HOTSPOT] No Wi-Fi interface found: %v", ifaceErr)
+				log.Printf("[HOST-WIFI] No host Wi-Fi interface found: %v", ifaceErr)
 			}
 		} else {
 			scanner.SetConnected(*targetSSID)
-			log.Printf("[HOTSPOT] Successfully connected to '%s'", *targetSSID)
+			log.Printf("[HOST-WIFI] Host adapter connected to '%s'", *targetSSID)
 		}
 	} else if *targetSSID != "" {
 		time.Sleep(100 * time.Millisecond)
 		_, _ = scanner.SelectHotspot(*targetSSID)
-		log.Printf("[HOTSPOT] Target '%s' selected (no passphrase supplied; not connected)", *targetSSID)
+		log.Printf("[HOST-WIFI] Target '%s' selected (no passphrase supplied; NOT connected)", *targetSSID)
 	}
 
 	fmt.Println("\n----------------------------------------------------------------")
@@ -149,12 +159,12 @@ func printRootUsage() {
 	fmt.Println("  aicloader    User-space firmware loader for AIC8800D80 USB Wi-Fi 6 adapters")
 	fmt.Println("  firmware     Fetch and verify proprietary firmware blobs")
 	fmt.Println("  driver       Install/uninstall the DriverKit driver")
-	fmt.Println("  cmdctl       User-space LMAC command channel (version query, scan, listen)")
+	fmt.Println("  cmdctl       User-space LMAC command channel; `cmdctl link` brings a dongle up")
 	fmt.Println("  help         Show this message")
 	fmt.Println()
 	fmt.Println("Flags (default daemon mode):")
-	fmt.Println("  --ssid <ssid>          Target Wi-Fi SSID")
-	fmt.Println("  --passphrase <pwd>     WPA2/WPA3 passphrase")
+	fmt.Println("  --ssid <ssid>          SSID for the HOST adapter (not the dongle)")
+	fmt.Println("  --passphrase <pwd>     Passphrase for the host adapter")
 	fmt.Println("  --port <port>          HTTP API server port (default 8990)")
 	fmt.Println("  --simulate             Force simulated 802.11 handshake")
 	fmt.Println()

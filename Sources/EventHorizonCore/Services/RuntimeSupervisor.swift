@@ -141,10 +141,18 @@ public actor RuntimeSupervisor: RuntimeSupervising {
             return cwdBin
         }
 
-        let devBin = URL(fileURLWithPath: "/Users/benebsworth/projects/event-horizon/bin/usbwifi")
+        // A developer checkout, and only in a debug build. This used to be a
+        // hardcoded absolute home directory compiled into release builds too —
+        // a path that exists on exactly one machine. Anywhere else it just
+        // returns nil, so a shipped app would report no daemon while its last
+        // resort was looking inside someone else's home directory.
+        #if DEBUG
+        let devBin = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("projects/event-horizon/bin/usbwifi")
         if FileManager.default.fileExists(atPath: devBin.path) {
             return devBin
         }
+        #endif
 
         return nil
     }
