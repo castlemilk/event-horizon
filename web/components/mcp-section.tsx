@@ -30,7 +30,7 @@ export function McpSection() {
           </h2>
           <p className="mt-4 text-lg leading-8 text-muted-foreground">
             Event Horizon ships an MCP server speaking JSON-RPC 2.0 over stdio.
-            Point Claude, Gemini or any MCP-capable agent at{" "}
+            Point Claude, Codex or any MCP-capable agent at{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">
               bin/usbwifi-mcp
             </code>{" "}
