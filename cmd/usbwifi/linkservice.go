@@ -68,6 +68,14 @@ type LinkStatus struct {
 	History []LinkTransition `json:"history,omitempty"`
 }
 
+// LinkState exposes the parts of the status the topology needs, without the
+// api package having to import this one. Reported through an interface because
+// pkg/api takes LinkStatus as an `any` closure, deliberately: a build without
+// link control should not advertise it.
+func (s LinkStatus) LinkState() (up bool, detail, ssid string) {
+	return s.State == LinkUp, s.Detail, s.SSID
+}
+
 // LinkService owns the dongle link inside the daemon, so the link can be
 // driven over the API (and therefore over MCP) rather than only from a
 // terminal.

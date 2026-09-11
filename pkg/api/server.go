@@ -392,10 +392,29 @@ func (s *Server) Start() {
 	// GET /api/hardware/topology - 3-tier mapping: USB Driver -> BSD Interface -> Network Connection
 	mux.HandleFunc("/api/hardware/topology", corsHandler(func(w http.ResponseWriter, r *http.Request) {
 		topology := usb.GetHardwareTopology()
+
+		// Add the link's own bridge. Enumerating hardware ports alone misses
+		// it entirely: once the link is up libusb holds the dongle exclusively
+		// so it leaves the USB bus, and the utun carrying all of its traffic
+		// was never a hardware port to begin with. The device therefore
+		// appeared on replug and vanished the moment it started working, which
+		// reads as a failure and is the opposite of one.
+		var note string
+		if s.LinkStatus != nil {
+			if st, ok := s.LinkStatus().(interface {
+				LinkState() (up bool, detail, ssid string)
+			}); ok {
+				up, detail, ssid := st.LinkState()
+				topology = append(topology, usb.BridgeInterfaces(up, detail, ssid)...)
+				note = usb.ClaimedDongleNote(up)
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(Response{
-			Status: "success",
-			Data:   topology,
+			Status:  "success",
+			Message: note,
+			Data:    topology,
 		})
 	}))
 
