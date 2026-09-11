@@ -308,10 +308,41 @@ public actor RuntimeSupervisor: RuntimeSupervising {
     }
 
     public func restartDaemonService() async throws {
+        // Terminating self.process is not enough and was never enough. A
+        // privileged daemon is spawned DETACHED through osascript, so
+        // self.process is the osascript wrapper, which has long since exited —
+        // the daemon it started is a root process this app never held a handle
+        // to. "Restart Daemon" therefore terminated nothing, called
+        // ensureDaemonRunning, found the old daemon still answering on :8990,
+        // and returned success having changed nothing. Deploying a fixed binary
+        // that way is impossible, which is exactly when a restart is wanted.
         if let proc = self.process, proc.isRunning {
             proc.terminate()
             self.process = nil
         }
+
+        // The daemon knows how to stop itself, and doing it through the daemon
+        // rather than a pkill means it tears down utun and releases the USB
+        // device cleanly instead of leaving an interface behind that outlives
+        // the radio.
+        if let binaryURL = resolveDaemonBinary() {
+            supervisorLog.notice("stopping the running daemon via --stop before restarting")
+            do {
+                _ = try PrivilegedLauncher.run(
+                    executable: binaryURL.path, arguments: ["--stop"], detached: false)
+            } catch {
+                // Worth saying, not worth aborting: the start below still has to
+                // happen, and it reports its own failure.
+                supervisorLog.notice("daemon --stop failed: \(error.localizedDescription)")
+            }
+            // Give the port a moment to come free so ensureDaemonRunning does
+            // not see the dying daemon and decide there is nothing to do.
+            for _ in 0..<20 {
+                if await !isDaemonReachable() { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+
         try await ensureDaemonRunning()
     }
 
