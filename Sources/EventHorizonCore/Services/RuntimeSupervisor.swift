@@ -266,6 +266,13 @@ public actor RuntimeSupervisor: RuntimeSupervising {
         if running.fingerprint.isEmpty {
             return "the daemon on :8990 predates this app's build and reports no identity"
         }
+        // Same path, different hash is the common case after a rebuild, and
+        // saying "a daemon from <path> is running, not the one in this app"
+        // when <path> IS this app's own daemon reads as a contradiction.
+        if running.path == resolveDaemonBinary()?.path {
+            return "an older build of the daemon is running from this bundle "
+                + "(\(running.fingerprint.prefix(12))…, expected \(bundledDaemonFingerprint()?.prefix(12) ?? "?")…)"
+        }
         let where_ = running.path.isEmpty ? "an unknown location" : running.path
         return "a daemon from \(where_) is running, not the one in this app"
     }
