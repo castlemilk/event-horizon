@@ -73,30 +73,39 @@ On top of the driver:
   multi-stream speedtest probes (`ping`), an OpenTelemetry exporter (`otel`),
   and mode-switch detection for other vendors' dongles (`usb`, `driver`).
 
-## Quick start
+## Install
 
-Requirements: macOS 14+ on Apple Silicon, Go 1.22+, [Task](https://taskfile.dev),
-libusb (`brew install libusb`), and a UGREEN AX900 / AIC8800D80 dongle. Swift 6
-is only needed for the app bundle.
+**Requirements:** macOS 14 or newer on Apple Silicon, a UGREEN AX900 /
+AIC8800D80 dongle, and `innoextract` (`brew install innoextract`) for the
+one-time firmware step.
 
-```bash
-git clone https://github.com/castlemilk/event-horizon
-cd event-horizon
-go build -o bin/usbwifi ./cmd/usbwifi
+1. Download the DMG from the
+   [latest release](https://github.com/castlemilk/event-horizon/releases/latest)
+   and drag **Event Horizon.app** to Applications. It is signed with Developer
+   ID and notarised by Apple, so it opens without any Gatekeeper workaround.
 
-# 1. Fetch the three public firmware blobs (SHA-256 verified)
-./bin/usbwifi firmware fetch  --target=aic8800D80 --out=~/.event-horizon/firmware
-./bin/usbwifi firmware verify --target=aic8800D80 --in=~/.event-horizon/firmware
+2. Produce the firmware. The app ships none: three of the four blobs are
+   public and the fourth is on the dongle itself.
 
-# 2. Carve the fourth blob from the dongle's own ZeroCD volume (see below)
+   ```bash
+   EH="/Applications/Event Horizon.app/Contents/Resources"
+   "$EH/usbwifi" firmware fetch     # three public blobs, SHA-256 verified
+   # plug the dongle in fresh: macOS mounts it as a small disk named UGREEN
+   "$EH/usbwifi" firmware carve     # carves the fourth from the dongle's own driver
+   ```
 
-# 3. Unplug the dongle, wait ~10 s, plug it back in. Then ONE command does everything:
-#    flash -> stack_start -> associate -> WPA2 4-way -> DHCP -> utun bridge
-sudo bin/usbwifi cmdctl link \
-  --ssid "<network>" --pass '<passphrase>' \
-  --channel <n> --bssid <aa:bb:cc:dd:ee:ff> \
-  --route 192.168.100.1
-```
+   `carve` unpacks the Windows installer on the dongle's ZeroCD volume, finds
+   the boot-ROM loader, locates the firmware image by its signature and
+   writes the complete set to `~/.event-horizon/firmware/aic8800D80-hybrid/`.
+
+3. Launch Event Horizon. It asks for administrator privileges once, to claim
+   the USB device and create the `utun`, then flashes, associates and bridges
+   from the dashboard. The same thing from the CLI:
+
+   ```bash
+   sudo "$EH/usbwifi" cmdctl link --ssid "<network>" --pass '<passphrase>' \
+     --channel <n> --bssid <aa:bb:cc:dd:ee:ff> --route 192.168.100.1
+   ```
 
 Verify the traffic really went over the dongle. If the host can already reach
 the target on its own, a passing test proves nothing:
@@ -107,20 +116,32 @@ ping -c 4 192.168.100.1
 grpcurl -plaintext 192.168.100.1:9200 list    # expect: SpaceX.API.Device.Device
 ```
 
-For the app and MCP server:
+### MCP server
 
-```bash
-task build              # app bundle + DMG + MCP server
-open "build/Event Horizon.app"
+`usbwifi-mcp` is in the same `Resources` directory. Point Claude Desktop,
+Codex or any MCP-capable agent at it and it can scan, connect and diagnose the
+link:
 
-go build -o bin/usbwifi-mcp ./cmd/usbwifi-mcp
-# .agents/mcp_config.json / claude_desktop_config.json:
-# { "mcpServers": { "usbwifi": { "command": "bin/usbwifi-mcp",
-#     "env": { "DAEMON_URL": "http://127.0.0.1:8990" } } } }
+```json
+{ "mcpServers": { "usbwifi": {
+    "command": "/Applications/Event Horizon.app/Contents/Resources/usbwifi-mcp",
+    "env": { "DAEMON_URL": "http://127.0.0.1:8990" } } } }
 ```
 
-`task --list` shows every command; the `aic:*` tasks wrap the individual driver
-stages for debugging.
+### Build from source
+
+Go 1.22+, Swift 6, [Task](https://taskfile.dev) and libusb (`brew install libusb`).
+
+```bash
+git clone https://github.com/castlemilk/event-horizon
+cd event-horizon
+task build              # signed app bundle + DMG + MCP server into build/
+task test               # Go + Swift unit tests (task test:hardware needs a dongle)
+```
+
+`task --list` shows everything; the `aic:*` tasks wrap the individual driver
+stages for debugging, and `docs/RELEASING.md` covers signing, notarisation
+and publishing.
 
 ## Firmware
 
@@ -134,14 +155,15 @@ proprietary ships with this repo.
 | `fw_patch_8800d80_u02.bin` | 32,700 B | radxa-pkg/aic8800 |
 | `fw_patch_table_8800d80_u02.bin` | 1,384 B | radxa-pkg/aic8800 |
 
-To carve the main image: capture the ZeroCD volume with
-`scripts/aic-zerocd-capture.sh`, unpack `Setup.exe` with `innoextract`, and in
-`win10_x64/aicloadfw.Sys` find the single occurrence of the two-word signature
-`0x001A0000 0x001201A5` (initial SP, reset vector). The image is 324,848 bytes
+The carve: unpack the `Setup.exe` on the ZeroCD volume with `innoextract`,
+and in `win10_x64/aicloadfw.Sys` find the single occurrence of the two-word
+signature `0x001A0000 0x001201A5` (initial SP, reset vector). The u32 at
+`+0x454` is the end address, so the image is `end - 0x120000` = 324,848 bytes
 from there. Pin the `win10_x64` variant: `win7_x64` is the same length and
 differs in 11 bytes.
 
-**Do not use radxa's `fmacfw_8800d80_u02.bin` (358,072 B).** It is for
+`usbwifi firmware carve` does all of that; the recipe is here so it can be
+checked. **Do not use radxa's `fmacfw_8800d80_u02.bin` (358,072 B).** It is for
 different silicon. Flashing it is what produced the week-long "0x170000 write
 wall" red herring described in the write-up.
 

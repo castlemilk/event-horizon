@@ -8,15 +8,19 @@ cd event-horizon
 task build          # builds .app + DMG + MCP server
 open "build/Event Horizon.app"`;
 
-const daemon = `# run just the Go daemon + API
-go build -o bin/usbwifi ./cmd/usbwifi
-./bin/usbwifi --ssid "CNH Starlink" --port 8990
-# → http://127.0.0.1:8990/api/wifi/scan`;
+const daemon = `# one-time firmware step (brew install innoextract)
+EH="/Applications/Event Horizon.app/Contents/Resources"
+"$EH/usbwifi" firmware fetch    # 3 public blobs, SHA-256 verified
+"$EH/usbwifi" firmware carve    # 4th blob, from the dongle's ZeroCD volume
+
+# bring the link up from the CLI
+sudo "$EH/usbwifi" cmdctl link --ssid "<network>" --pass '<pw>'`;
 
 const requirements = [
   "macOS 14 or newer, Apple Silicon (arm64)",
   "A UGREEN AX900 (AICSEMI AIC8800D80) USB Wi-Fi dongle",
-  "Go 1.22+ and Swift 6 toolchain to build from source",
+  "innoextract (brew install innoextract) for the one-time firmware step",
+  "Go 1.22+ and Swift 6 only if you build from source",
 ];
 
 export function InstallSection() {
@@ -44,12 +48,16 @@ export function InstallSection() {
           </CardHeader>
           <CardContent>
             <p className="text-sm leading-6 text-muted-foreground">
-              Signed Apple Silicon build with the Go daemon and libusb bundled
-              inside the app bundle.
+              Apple Silicon build, signed with Developer ID and notarised by
+              Apple. The Go daemon, the MCP server and libusb are inside the
+              app bundle. Firmware is not: a one-time{" "}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">firmware fetch</code>
+              {" "}+{" "}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">firmware carve</code>
+              {" "}produces it from the dongle&apos;s own driver.
             </p>
             <a
-              href="/downloads/EventHorizon-1.0.0-macOS.dmg"
-              download
+              href="https://github.com/castlemilk/event-horizon/releases/download/v1.0.0/EventHorizon-1.0.0-macOS.dmg"
               className="mt-4 inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
             >
               <Apple className="size-4" />
@@ -84,8 +92,9 @@ export function InstallSection() {
           <CardContent className="grid gap-6 lg:grid-cols-2">
             <div>
               <p className="mb-3 text-sm text-muted-foreground">
-                Run the daemon on its own — the HTTP API is all you need for
-                scripting or the MCP server.
+                The app does the same thing with a button, but everything is
+                scriptable from the bundled CLI, and the daemon&apos;s HTTP API on
+                :8990 is what the MCP server talks to.
               </p>
               <pre className="overflow-x-auto rounded-lg border border-border/60 bg-black p-4 font-mono text-[13px] leading-6 text-zinc-300">
                 <code>{daemon}</code>

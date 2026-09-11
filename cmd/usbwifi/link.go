@@ -69,8 +69,9 @@ func runCmdLink(ctx context.Context, args []string) int {
 		}
 		if !firmwareSetPresent(dir) {
 			fmt.Printf("link: no firmware set at %s\n", dir)
-			fmt.Println("      The blobs this chip needs are carved from the vendor driver on the")
-			fmt.Println("      dongle's own ZeroCD volume; see docs/HANDOVER-aic8800d80.md section 2.")
+			fmt.Println("      Three of the four blobs are public and the fourth lives on the dongle:")
+			fmt.Println("        ./bin/usbwifi firmware fetch --target=aic8800D80 --out=~/.event-horizon/firmware")
+			fmt.Println("        ./bin/usbwifi firmware carve      # needs: brew install innoextract")
 			return 1
 		}
 		reportLink(LinkFlashing, "flashing firmware")

@@ -63,10 +63,15 @@ tasks:
       - task: relaunch
 
   test:
-    desc: Run Go & Swift unit test suites
+    desc: Run Go & Swift unit test suites (everything except ./e2e, which needs a live dongle)
     cmds:
-      - go test ./...
+      - go test $(go list ./... | grep -v /e2e)
       - swift test
+
+  test:hardware:
+    desc: "Hardware e2e: needs the daemon running on :8990, a dongle plugged in fresh, and the test SSID in range"
+    cmds:
+      - go test ./e2e/...
 
   test:e2e:
     desc: Run end-to-end app bundle integrity verification
@@ -117,6 +122,38 @@ tasks:
       - task: test
       - task: release:dmg
       - task: release:mas
+
+  release:notarize:
+    desc: "Notarise + staple the built DMG with Apple (needs the ASC API key; see scripts/notarize.sh)"
+    cmds:
+      - ./scripts/notarize.sh
+
+  release:github:
+    desc: "Publish build/EventHorizon-<v>-macOS.dmg (+ sha256) as GitHub release v<v>. VERSION=1.0.0 by default."
+    vars:
+      VERSION: '{{.VERSION | default "1.0.0"}}'
+    preconditions:
+      - sh: test -f build/EventHorizon-{{.VERSION}}-macOS.dmg.sha256
+        msg: "run 'task release:notarize' first — refusing to publish an un-notarised DMG"
+      - sh: xcrun stapler validate build/EventHorizon-{{.VERSION}}-macOS.dmg
+        msg: "DMG is not stapled"
+    cmds:
+      - git tag -a v{{.VERSION}} -m "Event Horizon v{{.VERSION}}" 2>/dev/null || true
+      - git push origin v{{.VERSION}}
+      - >-
+        gh release create v{{.VERSION}}
+        build/EventHorizon-{{.VERSION}}-macOS.dmg
+        build/EventHorizon-{{.VERSION}}-macOS.dmg.sha256
+        --title "Event Horizon v{{.VERSION}}"
+        --notes-file docs/release-notes/v{{.VERSION}}.md
+
+  release:
+    desc: "The whole thing: test, build + sign, notarise, publish to GitHub"
+    cmds:
+      - task: test
+      - task: build
+      - task: release:notarize
+      - task: release:github
 
   # ── AIC8800D80 USB Wi-Fi 6 driver stack ────────────────────────────────
   aic:status:

@@ -56,6 +56,8 @@ func runFirmwareCmd(args []string) int {
 		return runFirmwareVerify(args[1:])
 	case "list":
 		return runFirmwareList(args[1:])
+	case "carve":
+		return runFirmwareCarve(args[1:])
 	case "help", "-h", "--help":
 		usageFirmware()
 		return 0
@@ -331,8 +333,11 @@ Usage:
   ./bin/usbwifi firmware fetch [--target=aic8800D80] [--out=<dir>]
   ./bin/usbwifi firmware verify [--target=aic8800D80] [--in=<dir>]
   ./bin/usbwifi firmware list
+  ./bin/usbwifi firmware carve [--from <Setup.exe|dir>] [--out=<dir>]
 
-The blobs are GPL-tainted and fetched from the Android common kernel
-tree at android.googlesource.com.
+fetch/verify handle the three public blobs (adid, patch, patch_table).
+carve produces the fourth, fmacfw_8800d80_u02_ipc.bin, from the Windows
+driver on the dongle's own ZeroCD volume. Nothing proprietary ships with
+this tool; every owner already has the firmware.
 `)
 }

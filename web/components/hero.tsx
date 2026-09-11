@@ -29,7 +29,7 @@ export function Hero() {
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Button asChild size="lg">
-                <a href="/downloads/EventHorizon-1.0.0-macOS.dmg" download>
+                <a href="https://github.com/castlemilk/event-horizon/releases/download/v1.0.0/EventHorizon-1.0.0-macOS.dmg">
                   <Download className="size-4" />
                   Download for macOS
                 </a>
