@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import os
 
@@ -94,13 +95,19 @@ public actor RuntimeSupervisor: RuntimeSupervising {
 
     public func ensureDaemonRunning() async throws {
         supervisorLog.notice("ensureDaemonRunning: entered")
-        if let proc = self.process, proc.isRunning {
-            if await isDaemonReachable() {
+
+        // Reachable is not sufficient. A daemon left over from an older bundle
+        // answers :8990 exactly like ours, so "something is listening" was
+        // taken as "we are running" and a freshly built app went on serving
+        // from a stale binary — every fix present in the bundle, none of them
+        // in the process. Insist it is OUR daemon.
+        if await isDaemonReachable() {
+            if await daemonIsOurs() {
                 return
             }
-        }
-        if await isDaemonReachable() {
-            return
+            let why = await daemonMismatchReason() ?? "the running daemon is not this app's"
+            supervisorLog.notice("replacing a foreign daemon: \(why)")
+            try await stopRunningDaemon()
         }
 
         // If the service is installed, launchd owns the daemon's lifetime and
@@ -194,13 +201,73 @@ public actor RuntimeSupervisor: RuntimeSupervising {
     }
 
     private func isDaemonReachable() async -> Bool {
-        guard let url = URL(string: "http://127.0.0.1:8990/api/status") else { return false }
+        await daemonIdentity() != nil
+    }
+
+    /// What the daemon on :8990 says it is: its build fingerprint and where it
+    /// was launched from. nil when nothing answers.
+    private func daemonIdentity() async -> (fingerprint: String, path: String)? {
+        guard let url = URL(string: "http://127.0.0.1:8990/api/status") else { return nil }
         do {
-            let (_, resp) = try await URLSession.shared.data(from: url)
-            return (resp as? HTTPURLResponse)?.statusCode == 200
+            let (data, resp) = try await URLSession.shared.data(from: url)
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            guard
+                let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let payload = root["data"] as? [String: Any]
+            else { return ("", "") }
+            return (
+                payload["buildFingerprint"] as? String ?? "",
+                payload["executablePath"] as? String ?? ""
+            )
         } catch {
-            return false
+            return nil
         }
+    }
+
+    /// SHA-256 of the daemon binary inside this app bundle.
+    ///
+    /// This is the other half of the identity check: the app knows what its own
+    /// daemon should hash to, so it can tell "my daemon is running" from
+    /// "something is running".
+    private func bundledDaemonFingerprint() -> String? {
+        guard let url = resolveDaemonBinary(),
+              let data = FileManager.default.contents(atPath: url.path)
+        else { return nil }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Whether the daemon currently answering is the one this app ships.
+    ///
+    /// A stale daemon from an older bundle answers :8990 perfectly well, which
+    /// is how a rebuilt app can spend an afternoon appearing to have no effect:
+    /// every fix is in the bundle, and the process serving requests predates
+    /// all of them.
+    ///
+    /// A daemon reporting NO fingerprint is not "unknown", it is old — every
+    /// build that carries this check reports one, so its absence dates the
+    /// process to before the check existed. That is exactly the stale daemon
+    /// worth replacing, and an earlier version of this treated it as a match,
+    /// which would have left the commonest case unhandled.
+    ///
+    /// The one genuine cannot-tell is our own side: if the bundled binary
+    /// cannot be hashed we have nothing to compare against, and tearing down a
+    /// working daemon on that basis would be worse than the problem.
+    public func daemonIsOurs() async -> Bool {
+        guard let running = await daemonIdentity() else { return false }
+        guard let ours = bundledDaemonFingerprint(), !ours.isEmpty else { return true }
+        return running.fingerprint == ours
+    }
+
+    /// Describes a mismatch for the UI, or nil when the daemon is ours.
+    public func daemonMismatchReason() async -> String? {
+        guard let running = await daemonIdentity() else { return nil }
+        guard let ours = bundledDaemonFingerprint(), !ours.isEmpty else { return nil }
+        if running.fingerprint == ours { return nil }
+        if running.fingerprint.isEmpty {
+            return "the daemon on :8990 predates this app's build and reports no identity"
+        }
+        let where_ = running.path.isEmpty ? "an unknown location" : running.path
+        return "a daemon from \(where_) is running, not the one in this app"
     }
 
     private func resolveDaemonBinary() -> URL? {
@@ -307,6 +374,25 @@ public actor RuntimeSupervisor: RuntimeSupervising {
         }
     }
 
+    /// Stops whatever daemon is on :8990 using its own --stop, privileged.
+    ///
+    /// Through the daemon rather than a signal, so it tears down utun and
+    /// releases the USB claim instead of leaving an interface behind that
+    /// outlives the radio it was bridging.
+    private func stopRunningDaemon() async throws {
+        guard let binaryURL = resolveDaemonBinary() else { return }
+        do {
+            _ = try PrivilegedLauncher.run(
+                executable: binaryURL.path, arguments: ["--stop"], detached: false)
+        } catch {
+            supervisorLog.notice("daemon --stop failed: \(error.localizedDescription)")
+        }
+        for _ in 0..<20 {
+            if await !isDaemonReachable() { return }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+    }
+
     public func restartDaemonService() async throws {
         // Terminating self.process is not enough and was never enough. A
         // privileged daemon is spawned DETACHED through osascript, so
@@ -321,28 +407,8 @@ public actor RuntimeSupervisor: RuntimeSupervising {
             self.process = nil
         }
 
-        // The daemon knows how to stop itself, and doing it through the daemon
-        // rather than a pkill means it tears down utun and releases the USB
-        // device cleanly instead of leaving an interface behind that outlives
-        // the radio.
-        if let binaryURL = resolveDaemonBinary() {
-            supervisorLog.notice("stopping the running daemon via --stop before restarting")
-            do {
-                _ = try PrivilegedLauncher.run(
-                    executable: binaryURL.path, arguments: ["--stop"], detached: false)
-            } catch {
-                // Worth saying, not worth aborting: the start below still has to
-                // happen, and it reports its own failure.
-                supervisorLog.notice("daemon --stop failed: \(error.localizedDescription)")
-            }
-            // Give the port a moment to come free so ensureDaemonRunning does
-            // not see the dying daemon and decide there is nothing to do.
-            for _ in 0..<20 {
-                if await !isDaemonReachable() { break }
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
-
+        supervisorLog.notice("stopping the running daemon via --stop before restarting")
+        try await stopRunningDaemon()
         try await ensureDaemonRunning()
     }
 

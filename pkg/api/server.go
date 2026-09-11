@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/castlemilk/event-horizon/pkg/driver"
 	"github.com/castlemilk/event-horizon/pkg/netstat"
@@ -688,6 +689,12 @@ func (s *Server) Start() {
 				"hotspots": len(s.scanner.ListHotspots()),
 				"arch":     "arm64",
 				"os":       "darwin",
+				// Identity, so the app can confirm this is the daemon it
+				// shipped rather than a survivor from an older bundle. See
+				// identity.go for why a hash and not a version string.
+				"buildFingerprint": BuildFingerprint(),
+				"executablePath":   ExecutablePath(),
+				"pid":              os.Getpid(),
 			},
 		})
 	}))
