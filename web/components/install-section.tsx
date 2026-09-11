@@ -15,7 +15,7 @@ go build -o bin/usbwifi ./cmd/usbwifi
 
 const requirements = [
   "macOS 14 or newer, Apple Silicon (arm64)",
-  "A USB Wi-Fi dongle: AIC8800, Realtek, or UGREEN",
+  "A UGREEN AX900 (AICSEMI AIC8800D80) USB Wi-Fi dongle",
   "Go 1.22+ and Swift 6 toolchain to build from source",
 ];
 

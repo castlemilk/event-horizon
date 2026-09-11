@@ -5,7 +5,9 @@ import { Blackhole } from "@/components/blackhole";
 import { GithubIcon } from "@/components/github-icon";
 
 const links = [
+  { href: "#how-it-works", label: "How it works" },
   { href: "#features", label: "Features" },
+  { href: "https://benebsworth.com/blog/usb-wifi-in-userspace/", label: "Write-up" },
   { href: "#telemetry", label: "Telemetry" },
   { href: "#mcp", label: "MCP" },
   { href: "#install", label: "Install" },

@@ -1,6 +1,7 @@
 import { SiteNav } from "@/components/site-nav";
 import { Hero } from "@/components/hero";
 import { Features } from "@/components/features";
+import { HowItWorks } from "@/components/how-it-works";
 import { SpectrumShowcase } from "@/components/spectrum-showcase";
 import { McpSection } from "@/components/mcp-section";
 import { InstallSection } from "@/components/install-section";
@@ -12,6 +13,7 @@ export default function Home() {
       <SiteNav />
       <main className="flex-1">
         <Hero />
+        <HowItWorks />
         <Features />
         <SpectrumShowcase />
         <McpSection />

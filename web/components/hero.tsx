@@ -20,9 +20,11 @@ export function Hero() {
             </h1>
 
             <p className="mt-4 max-w-xl text-lg leading-8 text-muted-foreground">
-              Turn a USB Wi-Fi dongle into a Starlink uplink. Detect and
-              mode-switch hardware, negotiate WPA2/WPA3 handshakes, stream live
-              telemetry, and drive the whole thing from an AI agent over MCP.
+              A standard USB Wi-Fi dongle does not work on a Mac. So we made
+              it work: a driver that never touches the kernel. Flash the
+              firmware, bring up the radio, run the WPA2 handshake and bridge
+              the link into a utun, all from user space with SIP on. Then
+              drive it from an AI agent over MCP.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -42,8 +44,8 @@ export function Hero() {
 
             <dl className="mt-10 grid max-w-xl grid-cols-3 gap-6 border-t border-border/60 pt-6">
               {[
-                ["AIC8800", "Realtek · UGREEN"],
-                ["WPA2/3", "4-way EAPOL"],
+                ["0 kexts", "SIP on, user space only"],
+                ["WPA2", "4-way EAPOL, from scratch"],
                 ["6", "MCP tools"],
               ].map(([k, v]) => (
                 <div key={k}>
@@ -69,24 +71,24 @@ export function Hero() {
               </div>
               <pre className="overflow-x-auto p-4 font-mono text-[13px] leading-6 text-zinc-300">
                 <code>
-                  <span className="text-zinc-600">$ ./bin/usbwifi --ssid "CNH Starlink"</span>
+                  <span className="text-zinc-600">$ sudo bin/usbwifi cmdctl link --ssid "Uncle Rad-Guest" --route 192.168.100.1</span>
                   {"\n"}
                   <span className="text-sky-400">[USB]</span>{" "}
-                  AIC Wlan (VID 0xa69c · PID 0x8d80)
-                  {"\n"}
-                  <span className="text-sky-400">[USB]</span>{" "}
-                  Realtek 2.5G LAN ready on en14
+                  a69c:5723 ZeroCD → a69c:8d80 boot ROM → 368b:8d85 operational
                   {"\n"}
                   <span className="text-sky-400">[WIFI]</span>{" "}
-                  Scan: CNH Starlink · RSSI -58 · CH 6 · WPA2-PSK
+                  CONNECTED bssid=d2:e8:f0:50:f8:32 freq=2412
                   {"\n"}
                   <span className="text-emerald-400">[WPA2]</span>{" "}
-                  PMK derived · 4-Way handshake complete
+                  msg3 MIC ok · GTK unwrapped · PTK/GTK installed · control port open
+                  {"\n"}
+                  <span className="text-emerald-400">[NET]</span>{" "}
+                  offer 192.168.2.243 · gateway 74:24:9f:44:28:1f · 4/4 pings
                   {"\n"}
                   <span className="text-emerald-400">[LINK]</span>{" "}
-                  {"\u2713"} Connected · 192.168.100.2 → dish
+                  {"\u2713"} up · bridged on utun11 · route 192.168.100.1 → dish
                   {"\n"}
-                  <span className="text-zinc-600">$ ./bin/usbwifi-mcp</span>
+                  <span className="text-zinc-600">$ bin/usbwifi-mcp</span>
                   {"\n"}
                   <span className="text-violet-400">MCP</span>{" "}
                   6 tools registered · stdio · JSON-RPC 2.0

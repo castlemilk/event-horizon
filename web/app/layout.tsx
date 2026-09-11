@@ -95,11 +95,6 @@ const jsonLd = {
     name: "Ben Ebsworth",
     url: "https://benebsworth.com",
   },
-  aggregateRating: {
-    "@type": "AggregateRating",
-    ratingValue: "5.0",
-    ratingCount: "48",
-  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
