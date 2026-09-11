@@ -107,15 +107,17 @@ func runAICLoader(args []string) int {
 	// Stop the running daemon if requested. The daemon keeps the USB
 	// device claimed; we need to release it before opening our own.
 	if *killDaemon {
-		// The macOS app's RuntimeSupervisor respawns the daemon every
-		// few seconds, and each respawn opens the dongle. Killing only
-		// the daemon leaves the app to re-grab the device mid-upload,
-		// which is how a firmware write dies with LIBUSB_ERROR_TIMEOUT
-		// partway through. Stop the app first, then the daemon.
-		log.Printf("stopping the Event Horizon app so it cannot respawn the daemon...")
-		_ = exec.Command("pkill", "-9", "-f", "Event Horizon.app").Run()
-		_ = exec.Command("pkill", "-9", "-f", "EventHorizonApp").Run()
-
+		// This used to SIGKILL the Event Horizon app as well, on the grounds
+		// that its supervisor respawns the daemon and each respawn opens the
+		// dongle mid-upload. The app itself never opens the device — it has no
+		// libusb and talks HTTP to the daemon — so killing it freed nothing,
+		// and it cost the user their menu bar app on every firmware write.
+		//
+		// The rival-daemon worry is real but belongs in the supervisor, which
+		// now declines to start a second daemon when one of its own build is
+		// already answering. If a respawn does race a flash, the upload fails
+		// loudly rather than silently, which is the trade worth making against
+		// killing an app the user is looking at.
 		log.Printf("stopping running usbwifi / usbwifi-mcp daemon...")
 		// Graceful stop first so utun is torn down cleanly; SIGKILL only
 		// if it does not go.

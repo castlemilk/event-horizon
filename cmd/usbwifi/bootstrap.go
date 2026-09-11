@@ -220,12 +220,24 @@ func waitForAnyAIC(ctx context.Context) bool {
 	}
 }
 
-// stopDeviceHolders kills the app and daemon so libusb can claim the dongle.
+// stopDeviceHolders frees the dongle of any process that could be holding it.
 // pkill skips its own pid, so this does not signal the running bootstrap.
+//
+// It deliberately does NOT kill the Event Horizon app, though it used to, with
+// SIGKILL, on both call sites. The app never opens the device — it is a SwiftUI
+// front end that talks HTTP to this daemon and has no libusb anywhere in it —
+// so killing it freed nothing. The actual worry was the app's supervisor
+// spawning a RIVAL daemon mid-flash, and that is now handled where it belongs:
+// ensureDaemonRunning returns early when a daemon of its own build is already
+// answering, so it has no reason to start a second one.
+//
+// The cost of getting this wrong was invisible and kept being misread as a
+// crash: every successful bring-up flashes firmware, so every successful
+// bring-up SIGKILLed the app. It disappeared from the menu bar immediately
+// after each replug, left no crash report because SIGKILL produces none, and
+// looked for all the world like it had died on its own.
 func stopDeviceHolders() {
-	log.Printf("stopping the Event Horizon app and daemon so the device is free...")
-	_ = exec.Command("pkill", "-9", "-f", "Event Horizon.app").Run()
-	_ = exec.Command("pkill", "-9", "-f", "EventHorizonApp").Run()
+	log.Printf("stopping any rival daemon so the device is free (the app is left alone; it holds no USB session)...")
 	_ = exec.Command("pkill", "-TERM", "-x", "usbwifi").Run()
 	time.Sleep(500 * time.Millisecond)
 	_ = exec.Command("pkill", "-9", "-x", "usbwifi").Run()
