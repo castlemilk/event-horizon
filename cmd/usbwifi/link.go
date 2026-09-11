@@ -36,6 +36,7 @@ func runCmdLink(ctx context.Context, args []string) int {
 	fwDir := fs.String("firmware-dir", "", "firmware directory (default ~/.event-horizon/firmware/aic8800D80-hybrid)")
 	skipFlash := fs.Bool("skip-flash", false, "assume the firmware is already loaded and current")
 	force := fs.Bool("force", false, "proceed even when the chip is in a state whose radio is not trustworthy")
+	waitReplug := fs.Duration("wait-replug", 0, "when the chip needs a power cycle, wait this long for it to be unplugged and replugged, then continue (0 = do not wait)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -72,6 +73,7 @@ func runCmdLink(ctx context.Context, args []string) int {
 			fmt.Println("      dongle's own ZeroCD volume; see docs/HANDOVER-aic8800d80.md section 2.")
 			return 1
 		}
+		reportLink(LinkFlashing, "flashing firmware")
 		fmt.Printf("link: flashing firmware from %s ...\n", dir)
 		if rc := runBootstrap([]string{"--firmware-dir", dir}); rc != 0 {
 			fmt.Println("link: firmware bootstrap failed.")
@@ -88,13 +90,33 @@ func runCmdLink(ctx context.Context, args []string) int {
 			fmt.Println("link: the chip is already running firmware, so this may be a used")
 			fmt.Println("      instance — the radio allows one MM_RESET per flash and the connect")
 			fmt.Println("      spends it. A second run goes deaf without reporting anything.")
-			fmt.Println("      Unplug the dongle for ~10s and replug for a clean flash, or pass")
-			fmt.Println("      --skip-flash if you know this instance is untouched.")
-			return 1
+			if *waitReplug <= 0 {
+				fmt.Println("      Unplug the dongle for ~10s and replug for a clean flash, or pass")
+				fmt.Println("      --skip-flash if you know this instance is untouched.")
+				return 1
+			}
+			// Wait for the power cycle rather than dead-ending on it. The
+			// replug is the one step software cannot perform, but noticing it
+			// and carrying on is exactly what a state machine should do.
+			reportLink(LinkNeedsReplug, "unplug the dongle for ~10s and plug it back in")
+			fmt.Printf("      >>> UNPLUG THE DONGLE for ~10s, then plug it back in <<<\n")
+			fmt.Printf("      (waiting up to %s; the flash resumes by itself)\n", *waitReplug)
+			if !waitForFlashable(ctx, *waitReplug) {
+				fmt.Println("link: no replug seen — the chip is still running its used firmware.")
+				return 1
+			}
+			fmt.Println("link: replug detected — continuing.")
 		}
-		fmt.Println("link: reusing the running firmware instance (trustworthy only if")
-		fmt.Println("      nothing has associated on it yet).")
-
+		if *skipFlash || *force {
+			fmt.Println("link: reusing the running firmware instance (trustworthy only if")
+			fmt.Println("      nothing has associated on it yet).")
+			break
+		}
+		fmt.Printf("link: flashing firmware from %s ...\n", dir)
+		if rc := runBootstrap([]string{"--firmware-dir", dir}); rc != 0 {
+			fmt.Println("link: firmware bootstrap failed.")
+			return rc
+		}
 	default:
 		fmt.Println("link: the dongle is in an indeterminate USB state. Replug it and run again.")
 		return 1
@@ -127,8 +149,39 @@ func runCmdLink(ctx context.Context, args []string) int {
 	if *bssid != "" {
 		bringup = append(bringup, "--connect-bssid", *bssid)
 	}
+	reportLink(LinkAssociating, "associating with "+*ssid)
 	fmt.Printf("link: associating with %q ...\n", *ssid)
 	return runCmdBringup(ctx, bringup)
+}
+
+// waitForFlashable polls until the chip re-enumerates in a state that can be
+// flashed, i.e. after a physical power cycle. Returns false on timeout.
+//
+// Polling is the only option: a VBUS drop tears the device off the bus, so
+// there is no handle left to watch. The interval is short enough to feel
+// immediate and long enough not to spin.
+func waitForFlashable(ctx context.Context, limit time.Duration) bool {
+	deadline := time.Now().Add(limit)
+	sawGone := false
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(750 * time.Millisecond):
+		}
+		stage, err := protocol.DetectAICStage(ctx)
+		if err != nil {
+			// Off the bus: the unplug half of the cycle. Require this before
+			// accepting a flashable state, so a dongle that was already
+			// sitting in ZeroCD is not mistaken for a fresh replug.
+			sawGone = true
+			continue
+		}
+		if sawGone && (stage == protocol.StageZeroCD || stage == protocol.StageBootROM) {
+			return true
+		}
+	}
+	return false
 }
 
 // defaultFirmwareDir locates the blob set the loader needs.

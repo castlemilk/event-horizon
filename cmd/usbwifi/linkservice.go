@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 )
@@ -28,6 +29,31 @@ const (
 	LinkFailed      LinkState = "failed"       // gave up; Detail says why
 )
 
+// LinkTransition is one state change, kept so the sequence can be read back
+// after the fact.
+//
+// The bring-up is the part of this system that most often needs explaining
+// afterwards — "did it crash when I replugged it?" is not a question anyone
+// should have to answer by inference — and until this existed the state machine
+// left no trace at all: set() mutated a struct in memory and that was the whole
+// record. A caller polling every few seconds sees whatever state it happens to
+// land on and misses every transition between polls.
+type LinkTransition struct {
+	From   LinkState `json:"from"`
+	To     LinkState `json:"to"`
+	Detail string    `json:"detail"`
+	At     time.Time `json:"at"`
+	// HeldFor is how long the previous state lasted, which is usually the
+	// interesting part: thirty seconds in "handshaking" means something very
+	// different from thirty milliseconds.
+	HeldFor string `json:"heldFor"`
+}
+
+// maxLinkHistory bounds the recorded transitions. A bring-up is a dozen states;
+// this leaves room for several attempts without growing without limit in a
+// daemon that runs for weeks.
+const maxLinkHistory = 64
+
 // LinkStatus is the observable state of the dongle link.
 type LinkStatus struct {
 	State LinkState `json:"state"`
@@ -38,6 +64,8 @@ type LinkStatus struct {
 	Since     time.Time `json:"since"`
 	Attempts  int       `json:"attempts"`
 	LastError string    `json:"lastError,omitempty"`
+	// History is every transition this service has recorded, oldest first.
+	History []LinkTransition `json:"history,omitempty"`
 }
 
 // LinkService owns the dongle link inside the daemon, so the link can be
@@ -48,10 +76,11 @@ type LinkStatus struct {
 // two concurrent bring-ups would fight over the USB session, which is exactly
 // the failure mode that costs a replug.
 type LinkService struct {
-	mu     sync.Mutex
-	status LinkStatus
-	cancel context.CancelFunc
-	done   chan struct{}
+	mu      sync.Mutex
+	status  LinkStatus
+	cancel  context.CancelFunc
+	done    chan struct{}
+	history []LinkTransition
 }
 
 func NewLinkService() *LinkService {
@@ -62,15 +91,46 @@ func NewLinkService() *LinkService {
 func (l *LinkService) Status() LinkStatus {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.status
+	st := l.status
+	// Copy the slice: a caller must not be able to mutate the record, and the
+	// daemon keeps serving while they read it.
+	st.History = append([]LinkTransition(nil), l.history...)
+	return st
 }
 
 func (l *LinkService) set(state LinkState, detail string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.setLocked(state, detail)
+}
+
+// setLocked is set() for callers already holding the mutex. The terminal
+// transitions in Start()'s completion handler run under the lock, and they are
+// the ones most worth recording — "up -> down" is the whole answer to why the
+// dish went away.
+func (l *LinkService) setLocked(state LinkState, detail string) {
+	now := time.Now()
+	from := l.status.State
+	held := now.Sub(l.status.Since).Round(time.Millisecond)
+
+	// Record before mutating, so the entry describes the change rather than the
+	// destination. A no-op set (same state, new detail) is still worth keeping:
+	// "associating -> associating, now on channel 1" is progress.
+	l.history = append(l.history, LinkTransition{
+		From: from, To: state, Detail: detail, At: now, HeldFor: held.String(),
+	})
+	if len(l.history) > maxLinkHistory {
+		l.history = l.history[len(l.history)-maxLinkHistory:]
+	}
+
+	// And to the daemon log, which outlives the process the API serves from.
+	// Reconstructing a bring-up from a log is the difference between answering
+	// "what happened" and guessing at it.
+	log.Printf("[LINK] %s -> %s after %s: %s", from, state, held, detail)
+
 	l.status.State = state
 	l.status.Detail = detail
-	l.status.Since = time.Now()
+	l.status.Since = now
 }
 
 // Start brings the link up in the background and returns immediately with the

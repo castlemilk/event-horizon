@@ -86,6 +86,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 			// its rx counter frozen and its tx counter still climbing —
 			// indistinguishable from a healthy idle link.
 			linkDown.Store(true)
+			reportLink(LinkDown, fmt.Sprintf("link dropped: %s", ind))
 			// The firmware's own account of why the link dropped. Reason 15
 			// ("4-way handshake timeout") means the AP never accepted our
 			// msg2/msg4 — it is the difference between "we are done" and
@@ -492,6 +493,7 @@ func runCmdBringup(ctx context.Context, args []string) int {
 					if *txProbe {
 						return runTxProbe(ctx, s, vif, ind.APIdx, ind.BSSID, mac, eapolCh, *txMsgPipe)
 					}
+					reportLink(LinkHandshaking, "associated; running the WPA2 handshake")
 					if wpa2 {
 						if rc := runEapolHandshake(ctx, s, vif, ind.APIdx, ind.BSSID, mac, *connectSSID, *connectPass, eapolCh, *txMsgPipe); rc != 0 {
 							return rc

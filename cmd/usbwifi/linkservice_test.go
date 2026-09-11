@@ -56,3 +56,51 @@ func TestStopLeavesIdle(t *testing.T) {
 	}
 	_ = time.Now()
 }
+
+// TestTransitionsAreRecorded pins the tracing. The FSM previously left no
+// record at all: set() mutated a struct and that was it, so "what happened when
+// I replugged it?" could only be answered by inference.
+func TestTransitionsAreRecorded(t *testing.T) {
+	l := NewLinkService()
+	l.set(LinkFlashing, "starting bring-up")
+	l.set(LinkAssociating, "joining Uncle Rad-Guest")
+	l.set(LinkUp, "bridged on utun11")
+
+	h := l.Status().History
+	if len(h) != 3 {
+		t.Fatalf("recorded %d transitions, want 3", len(h))
+	}
+	if h[0].From != LinkIdle || h[0].To != LinkFlashing {
+		t.Errorf("first transition %s->%s, want idle->flashing", h[0].From, h[0].To)
+	}
+	if h[2].To != LinkUp || h[2].Detail == "" {
+		t.Errorf("last transition lost its detail: %+v", h[2])
+	}
+	for i, e := range h {
+		if e.HeldFor == "" {
+			t.Errorf("transition %d has no HeldFor; how long a state lasted is usually the point", i)
+		}
+	}
+
+	// The history must be a copy — a caller must not be able to edit the record.
+	h[0].To = LinkFailed
+	if l.Status().History[0].To == LinkFailed {
+		t.Error("Status() handed out the live slice; a reader mutated the record")
+	}
+}
+
+// TestTerminalTransitionsAreRecorded covers the ones that matter most: they run
+// under the lock in the completion handler and would bypass a naive set().
+func TestTerminalTransitionsAreRecorded(t *testing.T) {
+	l := NewLinkService()
+	l.set(LinkUp, "bridged")
+	l.mu.Lock()
+	l.setLocked(LinkDown, "the link ended")
+	l.mu.Unlock()
+
+	h := l.Status().History
+	last := h[len(h)-1]
+	if last.From != LinkUp || last.To != LinkDown {
+		t.Errorf("terminal transition recorded as %s->%s, want up->down", last.From, last.To)
+	}
+}

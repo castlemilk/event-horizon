@@ -201,6 +201,7 @@ func runBridge(ctx context.Context, s *session, vif, apIdx uint8, staMAC [6]byte
 		}
 	}()
 
+	reportLink(LinkUp, fmt.Sprintf("bridged on %s as %v", iface.Name, ipStr(myIP)))
 	fmt.Printf("  BRIDGE: running — point clients at %v through %s (ctrl-c to stop)\n",
 		ipStr(myIP), iface.Name)
 	tick := time.NewTicker(10 * time.Second)
@@ -214,6 +215,7 @@ func runBridge(ctx context.Context, s *session, vif, apIdx uint8, staMAC [6]byte
 			if linkDown != nil && linkDown.Load() {
 				fmt.Printf("  BRIDGE: LINK IS DOWN — the firmware reported a disconnect. "+
 					"Final counters tx=%d rx=%d dropped=%d\n", txPkts, rxPkts, txDrop)
+				reportLink(LinkDown, "the firmware reported a disconnect; a replug is needed")
 				fmt.Println("  BRIDGE: stopping; re-run `usbwifi cmdctl link` after a replug.")
 				return 1
 			}

@@ -41,6 +41,7 @@ func runDhcpPing(ctx context.Context, s *session, vif, apIdx uint8, staMAC, apMA
 	dhcp := lmac.DHCP{XID: xid}
 
 	// --- DHCP discover/offer ---
+	reportLink(LinkConfiguring, "handshake complete; requesting a DHCP lease")
 	fmt.Println("  NET: DHCP discover ...")
 	var offer lmac.DHCP
 	foundOffer := false
