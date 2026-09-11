@@ -16,6 +16,13 @@ import Foundation
 /// when that fails do we ask, and then the user gets the familiar system
 /// dialog rather than an instruction to go and edit /etc/sudoers.d by hand.
 public enum PrivilegedLauncher {
+    /// Where a detached privileged process's output goes.
+    ///
+    /// /var/log is root-writable, which suits a process launched as root, and
+    /// it survives the app quitting — the failure usually needs reading after
+    /// the fact.
+    public static let daemonLogPath = "/var/log/eventhorizon-daemon.log"
+
 
     public enum LaunchError: LocalizedError {
         case cancelled
@@ -111,7 +118,26 @@ public enum PrivilegedLauncher {
         if detached {
             // do shell script waits for completion, so a daemon has to be
             // fully detached or the prompt would never return.
-            shell = "nohup \(shell) >/dev/null 2>&1 & echo started"
+            //
+            // Its output goes to a log, NOT to /dev/null. It used to go to
+            // /dev/null, and the result was a daemon that reported "Started
+            // privileged after authorization" and then "never answered on
+            // :8990" with no way to find out why — the process printed its
+            // reason and we threw it away. A privileged process we cannot see
+            // the failure of is one we cannot support.
+            // NOT nohup. Under `do shell script ... with administrator
+            // privileges` there is no controlling terminal, so nohup fails with
+            // "can't detach from console: Inappropriate ioctl for device" and
+            // exits WITHOUT running the command — while the `& echo started`
+            // after it still prints "started". The launcher therefore reported
+            // a successful privileged start for a daemon that had never been
+            // run, and the supervisor sat there logging "Authorized, but the
+            // daemon never answered on :8990".
+            //
+            // A subshell with the output redirected is all the detaching that
+            // is needed: the child is reparented when the subshell exits, and
+            // `trap '' HUP` covers the SIGHUP that nohup was there for.
+            shell = "( trap '' HUP; \(shell) >> \(shellQuoted(Self.daemonLogPath)) 2>&1 & ) ; echo started"
         }
 
         let script = "do shell script \(appleScriptQuoted(shell)) with administrator privileges"
