@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -125,11 +126,41 @@ func runAICLoader(args []string) int {
 
 		// Wait for USB exclusive ownership to actually release, rather
 		// than a fixed 500ms that was sometimes too short.
+		stopped := false
 		for range 20 {
 			if exec.Command("pgrep", "-x", "usbwifi").Run() != nil {
+				stopped = true
 				break // no usbwifi process remains
 			}
 			time.Sleep(200 * time.Millisecond)
+		}
+
+		// Every pkill above discards its result, so a kill that was not
+		// permitted looked exactly like a kill that worked. The daemon normally
+		// runs as root — the supervisor starts it with `sudo -n ./bin/usbwifi`
+		// — and pkill from an unprivileged process cannot signal it, so
+		// --kill-daemon silently did nothing and we walked into the firmware
+		// write still believing the device was free.
+		//
+		// That is precisely the scenario the comment above warns about: the
+		// other process re-grabs the dongle mid-upload and the write dies
+		// partway with LIBUSB_ERROR_TIMEOUT, leaving the chip needing a power
+		// cycle. Refuse instead — a clear stop beats a half-written firmware.
+		if !stopped {
+			owner := "another user"
+			if out, err := exec.Command("ps", "-axo", "user=,comm=").Output(); err == nil {
+				for _, ln := range strings.Split(string(out), "\n") {
+					f := strings.Fields(ln)
+					if len(f) == 2 && strings.HasSuffix(f[1], "usbwifi") {
+						owner = f[0]
+						break
+					}
+				}
+			}
+			log.Printf("the usbwifi daemon is still running (owned by %s) after --kill-daemon; "+
+				"it holds the USB device, and a firmware upload started now can die partway and "+
+				"leave the chip needing a power cycle. Re-run with sudo, or stop the daemon first.", owner)
+			return 1
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
