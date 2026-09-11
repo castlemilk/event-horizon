@@ -55,6 +55,18 @@ public protocol RuntimeSupervising: Sendable {
     func ensureDaemonRunning() async throws
     func installDaemonService() async throws
     func restartDaemonService() async throws
+
+    /// Why the last privileged start did not happen, if it did not.
+    ///
+    /// This is on the protocol because callers need to tell a declined
+    /// authorization from a broken daemon: one should stop the app retrying and
+    /// say so, the other is worth retrying. The default returns nil, so an
+    /// implementation that never escalates need not care.
+    func privilegeError() async -> String?
+}
+
+public extension RuntimeSupervising {
+    func privilegeError() async -> String? { nil }
 }
 
 public enum SupervisorError: LocalizedError {
@@ -89,6 +101,23 @@ public actor RuntimeSupervisor: RuntimeSupervising {
         }
         if await isDaemonReachable() {
             return
+        }
+
+        // If the service is installed, launchd owns the daemon's lifetime and
+        // KeepAlive brings it back on its own. Spawning a second copy here
+        // would fight it for the USB device and would ask for an authorization
+        // that the install already granted, so wait briefly for launchd instead
+        // of starting a rival.
+        if Self.launchDaemonInstalled() {
+            supervisorLog.notice("LaunchDaemon is installed; waiting for launchd rather than spawning a second daemon")
+            for _ in 0..<10 {
+                if await isDaemonReachable() {
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+            lastPrivilegeError = nil
+            throw SupervisorError.daemonWouldNotStart(Self.launchDaemonPlist)
         }
 
         // 2. Resolve daemon executable path (bundle resource, MacOS directory, or relative bin)
@@ -144,6 +173,24 @@ public actor RuntimeSupervisor: RuntimeSupervising {
             try? await Task.sleep(for: .milliseconds(500))
         }
         return false
+    }
+
+    /// Path of the LaunchDaemon `installDaemonService()` writes.
+    static let launchDaemonPlist = "/Library/LaunchDaemons/com.castlemilk.eventhorizon.usbwifi.plist"
+
+    /// Whether the daemon is installed as a system service.
+    ///
+    /// This matters because the two ways of running the daemon are not
+    /// equivalent. An ad-hoc privileged spawn needs an authorization every
+    /// single time the daemon is not already up — the passwordless sudoers rule
+    /// people add covers `bin/usbwifi` in a checkout, not the copy inside the
+    /// app bundle, so `sudo -n` misses and the GUI prompt appears again and
+    /// again. The LaunchDaemon is authorized once at install and then owned by
+    /// launchd, which has KeepAlive set and restarts it without asking anyone.
+    ///
+    /// So when the service is installed, the app should get out of the way.
+    static func launchDaemonInstalled() -> Bool {
+        FileManager.default.fileExists(atPath: launchDaemonPlist)
     }
 
     private func isDaemonReachable() async -> Bool {

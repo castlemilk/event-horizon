@@ -42,6 +42,20 @@ public final class WiFiManagerStore {
     private let client: WiFiDaemonClientProviding
     private let supervisor: RuntimeSupervising
     private var pollTask: Task<Void, Never>?
+
+    /// How long to leave between attempts to bring a dead daemon back.
+    ///
+    /// The poll runs every three seconds, but a relaunch can involve an
+    /// authorization prompt, and prompting every three seconds would be
+    /// hostile. Where the passwordless sudoers rule exists the relaunch is
+    /// silent, so this only paces the case that is noisy.
+    private static let daemonRecoveryInterval: Duration = .seconds(20)
+    private var lastDaemonRecoveryAttempt: ContinuousClock.Instant?
+
+    /// Set when the user declines the authorization prompt. Declining is a
+    /// decision, not a fault, and re-asking every twenty seconds forever is how
+    /// an app teaches people to ignore it.
+    private var daemonRecoveryPaused = false
     private var isBootstrapped = false
 
     public init(
@@ -434,6 +448,54 @@ public final class WiFiManagerStore {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
                 await refreshData()
+                await recoverDaemonIfNeeded()
+            }
+        }
+    }
+
+    /// Brings the daemon back when it dies underneath a running app.
+    ///
+    /// `bootstrap()` calls `ensureDaemonRunning()` exactly once, behind an
+    /// `isBootstrapped` guard, so before this existed a daemon that died
+    /// mid-session simply stayed dead: the poll kept fetching, every fetch
+    /// failed, and the only ways back were quitting the app or finding the
+    /// Restart item in the menu. In practice that is what pushed people to run
+    /// `sudo ./bin/usbwifi` by hand — which is the exact thing
+    /// `PrivilegedLauncher` exists to make unnecessary. The app owns the
+    /// daemon's lifetime, so the app should be the one to restart it.
+    private func recoverDaemonIfNeeded() async {
+        guard !isDaemonConnected else {
+            // Healthy: clear the pacing so the next outage is acted on at once.
+            lastDaemonRecoveryAttempt = nil
+            daemonRecoveryPaused = false
+            return
+        }
+        guard !daemonRecoveryPaused else { return }
+
+        let now = ContinuousClock.now
+        if let last = lastDaemonRecoveryAttempt, now - last < Self.daemonRecoveryInterval {
+            return
+        }
+        lastDaemonRecoveryAttempt = now
+
+        statusMessage = "Daemon stopped — restarting it…"
+        do {
+            try await supervisor.ensureDaemonRunning()
+            isDaemonConnected = true
+            statusMessage = "Daemon restarted"
+            await refreshData()
+        } catch {
+            if let why = await supervisor.privilegeError() {
+                daemonRecoveryPaused = true
+                // Name the permanent fix, not just the symptom. Installing the
+                // service authorizes once and hands the daemon to launchd,
+                // which restarts it without ever asking again — that is the
+                // difference between one prompt and a prompt every time.
+                statusMessage = RuntimeSupervisor.launchDaemonInstalled()
+                    ? "The daemon needs permission to start: \(why) — use Restart Daemon to try again."
+                    : "The daemon needs permission each time it starts. Use Install Daemon Service once and macOS will keep it running. (\(why))"
+            } else {
+                statusMessage = "Daemon offline: \(error.localizedDescription)"
             }
         }
     }
@@ -472,6 +534,10 @@ public final class WiFiManagerStore {
     }
 
     public func restartDaemonService() async {
+        // An explicit restart is the user retrying, so lift any pause a
+        // declined prompt left behind.
+        daemonRecoveryPaused = false
+        lastDaemonRecoveryAttempt = nil
         statusMessage = "Restarting background daemon..."
         do {
             try await supervisor.restartDaemonService()
