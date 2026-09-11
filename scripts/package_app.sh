@@ -13,7 +13,7 @@ DMG_NAME="${BUILD_DIR}/EventHorizon-${VERSION}-macOS.dmg"
 PKG_NAME="${BUILD_DIR}/EventHorizon-${VERSION}-AppStore.pkg"
 
 echo "================================================================"
-echo "🚀 Building ${APP_NAME} v${VERSION} for macOS App Store (Apple Silicon)"
+echo "🚀 Building ${APP_NAME} v${VERSION} for macOS (Apple Silicon)"
 echo "================================================================"
 
 rm -rf "${BUILD_DIR}"
@@ -35,7 +35,7 @@ cp "${RESOURCES_DIR}/usbwifi" bin/usbwifi
 chmod +x bin/usbwifi
 
 CGO_ENABLED=1 CGO_CFLAGS="-I/opt/homebrew/include" CGO_LDFLAGS="-L/opt/homebrew/lib -lusb-1.0" \
-  go build -buildvcs=false -ldflags="-s -w" -o "${RESOURCES_DIR}/usbwifi-mcp" ./cmd/mcp-server 2>/dev/null || true
+  go build -buildvcs=false -ldflags="-s -w" -o "${RESOURCES_DIR}/usbwifi-mcp" ./cmd/usbwifi-mcp
 if [ -f "${RESOURCES_DIR}/usbwifi-mcp" ]; then
     chmod +x "${RESOURCES_DIR}/usbwifi-mcp"
     cp "${RESOURCES_DIR}/usbwifi-mcp" bin/usbwifi-mcp
@@ -43,6 +43,23 @@ fi
 
 if [ -f "Resources/com.castlemilk.eventhorizon.usbwifi.plist" ]; then
     cp "Resources/com.castlemilk.eventhorizon.usbwifi.plist" "${RESOURCES_DIR}/"
+fi
+
+# --- dongle bootstrap payload -------------------------------------------
+# The binary does the ZeroCD eject and the firmware upload itself (Go, via
+# libusb). It does NOT ship firmware. The image that runs on this chip is
+# carved from the vendor driver on the dongle's own ZeroCD volume
+# (`usbwifi firmware carve`), and the other three blobs are fetched from a
+# public repo (`usbwifi firmware fetch`). Bundling the carved blob would put
+# vendor-proprietary code in a public DMG, so the app tells the user how to
+# produce it instead. EH_BUNDLE_FIRMWARE=1 overrides this for a private build.
+FW_SET="${HOME}/.event-horizon/firmware/aic8800D80-hybrid"
+if [ "${EH_BUNDLE_FIRMWARE:-0}" = "1" ] && [ -s "${FW_SET}/fmacfw_8800d80_u02_ipc.bin" ]; then
+    mkdir -p "${RESOURCES_DIR}/firmware/aic8800D80-hybrid"
+    cp "${FW_SET}"/* "${RESOURCES_DIR}/firmware/aic8800D80-hybrid/"
+    echo "   • PRIVATE BUILD: bundled firmware set from ${FW_SET} — do not publish this DMG"
+else
+    echo "   • no firmware bundled (public build): users run 'usbwifi firmware fetch' + 'firmware carve'"
 fi
 
 # Bundle libusb dynamic library inside Contents/Frameworks for Sandbox & Gatekeeper compliance
@@ -87,26 +104,71 @@ chmod 644 "${CONTENTS_DIR}/Info.plist"
 echo "⚙️ [4/5] Code signing App Bundle..."
 xattr -cr "${APP_BUNDLE}" 2>/dev/null || true
 
-APP_CERT="3rd Party Mac Developer Application: Ben Ebsworth (WFTX6CN23F)"
+# Which entitlements to sign with.
+#
+# The default is the DIRECT (non-sandboxed) build, because the sandboxed one
+# cannot drive a dongle at all: raw libusb is unavailable inside the App
+# Sandbox, and the supervisor's authorization prompt is refused outright
+# (AppleScript -60005, which reports as a wrong password but is the sandbox
+# declining to escalate). Building the sandboxed flavour by default produced an
+# app that launched, looked healthy, and could never claim hardware.
+#
+# EH_SANDBOX=1 selects the App Store flavour, which is a viewer only.
+if [ "${EH_SANDBOX:-0}" = "1" ]; then
+    ENTITLEMENTS="Entitlements.plist"
+    echo "   • signing SANDBOXED (App Store) — this build CANNOT claim a dongle"
+else
+    ENTITLEMENTS="Entitlements-direct.plist"
+    echo "   • signing DIRECT (non-sandboxed) — required for USB + privilege escalation"
+fi
+
+# Signing identity. Distribution outside the App Store must be signed with
+# Developer ID and notarised; the "3rd Party Mac Developer" certificates are
+# App-Store-only and Gatekeeper rejects them on a direct download. Override
+# with EH_SIGN_IDENTITY, or set EH_SANDBOX=1 for the App Store flavour.
+if [ "${EH_SANDBOX:-0}" = "1" ]; then
+    APP_CERT="${EH_SIGN_IDENTITY:-3rd Party Mac Developer Application: Ben Ebsworth (WFTX6CN23F)}"
+else
+    APP_CERT="${EH_SIGN_IDENTITY:-Developer ID Application: Ben Ebsworth (WFTX6CN23F)}"
+fi
 INSTALLER_CERT="3rd Party Mac Developer Installer: Ben Ebsworth (WFTX6CN23F)"
 
-if security find-identity -v | grep -q "${APP_CERT}"; then
-    echo "  ✍️ Signing executables with '${APP_CERT}'..."
-    codesign --force --sign "${APP_CERT}" --entitlements Entitlements.plist "${FRAMEWORKS_DIR}"/*.dylib 2>/dev/null || true
-    codesign --force --sign "${APP_CERT}" --entitlements Entitlements.plist "${RESOURCES_DIR}/usbwifi" 2>/dev/null || true
-    codesign --force --sign "${APP_CERT}" --entitlements Entitlements.plist "${MACOS_DIR}/usbwifi" 2>/dev/null || true
-    codesign --force --options runtime --sign "${APP_CERT}" --entitlements Entitlements.plist "${MACOS_DIR}/EventHorizonApp"
-    codesign --force --deep --options runtime --sign "${APP_CERT}" --entitlements Entitlements.plist "${APP_BUNDLE}"
-    echo "  ✅ App Bundle signed successfully with Developer Certificate."
+if security find-identity -v -p codesigning | grep -q "${APP_CERT}"; then
+    echo "  ✍️ Signing with '${APP_CERT}' (hardened runtime)..."
+    # Inside-out: libraries, then helper executables, then the main binary,
+    # then the bundle. Every Mach-O gets the hardened runtime, which
+    # notarisation requires; the Go binaries need the entitlements too
+    # (allow-jit + disable-library-validation for libusb).
+    for dylib in "${FRAMEWORKS_DIR}"/*.dylib; do
+        [ -f "$dylib" ] && codesign --force --timestamp --options runtime --sign "${APP_CERT}" "$dylib"
+    done
+    for helper in "${RESOURCES_DIR}/usbwifi" "${RESOURCES_DIR}/usbwifi-mcp" "${MACOS_DIR}/usbwifi"; do
+        [ -f "$helper" ] && codesign --force --timestamp --options runtime --entitlements "${ENTITLEMENTS}" --sign "${APP_CERT}" "$helper"
+    done
+    codesign --force --timestamp --options runtime --entitlements "${ENTITLEMENTS}" --sign "${APP_CERT}" "${MACOS_DIR}/EventHorizonApp"
+    codesign --force --timestamp --options runtime --entitlements "${ENTITLEMENTS}" --sign "${APP_CERT}" "${APP_BUNDLE}"
+    codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
+    echo "  ✅ App bundle signed."
+    SIGNED=1
 else
-    codesign --force --deep --sign - --entitlements Entitlements.plist "${APP_BUNDLE}" || true
-    echo "  ⚠️ App Bundle signed ad-hoc."
+    codesign --force --deep --sign - --entitlements "${ENTITLEMENTS}" "${APP_BUNDLE}" || true
+    echo "  ⚠️ '${APP_CERT}' not in the keychain — bundle signed ad-hoc (will NOT pass Gatekeeper)."
+    SIGNED=0
 fi
 
 # 5. Create Distribution DMG & PKG
 echo "⚙️ [5/5] Packaging DMG and App Store PKG..."
 if command -v hdiutil &> /dev/null; then
-    hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_BUNDLE}" -ov -format UDZO "${DMG_NAME}"
+    # Stage the volume with an /Applications symlink so the DMG is drag-to-install.
+    STAGE="${BUILD_DIR}/dmg-stage"
+    rm -rf "${STAGE}" && mkdir -p "${STAGE}"
+    cp -R "${APP_BUNDLE}" "${STAGE}/"
+    ln -s /Applications "${STAGE}/Applications"
+    hdiutil create -volname "${APP_NAME}" -srcfolder "${STAGE}" -ov -format UDZO "${DMG_NAME}"
+    rm -rf "${STAGE}"
+    if [ "${SIGNED}" = "1" ]; then
+        codesign --force --timestamp --sign "${APP_CERT}" "${DMG_NAME}"
+    fi
     echo "✅ DMG created at: ${DMG_NAME}"
 fi
 

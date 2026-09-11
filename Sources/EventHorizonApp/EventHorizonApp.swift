@@ -1,8 +1,28 @@
 import SwiftUI
 import EventHorizonCore
 
+/// Keeps the app alive when its window closes.
+///
+/// This app is a menu-bar app that also has a dashboard window. SwiftUI
+/// terminates an app whose last WindowGroup window closes, which took the
+/// MenuBarExtra down with it: closing the dashboard quit the whole app, the
+/// icon vanished from the menu bar, and because it is an orderly quit rather
+/// than a crash there was no crash report and nothing in the log to explain it.
+/// It simply was not there any more.
+///
+/// The daemon is unaffected — it is a separate root process — so the link keeps
+/// working while the app that is supposed to be supervising it is gone, which
+/// is the worst version of this: everything looks fine except the thing you
+/// look at.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+}
+
 @main
 struct EventHorizonApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var store = WiFiManagerStore()
 
     var body: some Scene {

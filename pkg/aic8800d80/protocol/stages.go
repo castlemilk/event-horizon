@@ -54,6 +54,13 @@ const (
 	PID_AIC8800D80_OpWiFiBT uint16 = 0x8d81
 	VID_AIC8800D80_OpWiFi   uint16 = 0xa69c
 	PID_AIC8800D80_OpWiFi   uint16 = 0x8d83
+	// The firmware the vendor's Windows loader (aicloadfw.sys) selects for
+	// chip_id=7 — the image AICSemi actually ships for this silicon — does
+	// not reuse the boot ROM's a69c VID: it enumerates as 368b:8d85, which
+	// is exactly what the Windows Wi-Fi driver INF binds
+	// (USB\VID_368b&PID_8d85). Third operational identity.
+	VID_AIC8800D80_OpWin uint16 = 0x368b
+	PID_AIC8800D80_OpWin uint16 = 0x8d85
 )
 
 // DetectAICStage checks for the presence of the AIC8800D80 in any of its
@@ -72,6 +79,9 @@ func DetectAICStage(ctx context.Context) (Stage, error) {
 		return StageOperational, nil
 	}
 	if hasPID(c, VID_AIC8800D80_OpWiFi, PID_AIC8800D80_OpWiFi) {
+		return StageOperational, nil
+	}
+	if hasPID(c, VID_AIC8800D80_OpWin, PID_AIC8800D80_OpWin) {
 		return StageOperational, nil
 	}
 	if hasPID(c, VID_AIC8800D80_BootROM, PID_AIC8800D80_BootROM) {

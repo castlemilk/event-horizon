@@ -36,7 +36,7 @@ export function SiteNav() {
             </a>
           </Button>
           <Button asChild size="sm">
-            <a href="/downloads/EventHorizon-1.0.0-macOS.dmg" download>
+            <a href="https://github.com/castlemilk/event-horizon/releases/download/v1.0.0/EventHorizon-1.0.0-macOS.dmg">
               <Download className="size-4" />
               Download .dmg
             </a>

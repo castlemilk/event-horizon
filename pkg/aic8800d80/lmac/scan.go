@@ -74,16 +74,17 @@ func FreqToChannel(band uint8, freq uint16) uint8 {
 // ScanStartReq mirrors struct scanu_start_req (lmac_msg.h).
 //
 // Layout (376 bytes):
-//   struct mac_chan_def chan[42]; // 42 * 6 = 252 bytes
-//   struct mac_ssid ssid[3];      // 3 * 33 = 99 bytes (offset 252..350)
-//   struct mac_addr bssid;        // 6 bytes (offset 352..357, 2-byte aligned)
-//   u32_l add_ies;                // 4 bytes (offset 360..363, 4-byte aligned)
-//   u16_l add_ie_len;             // 2 bytes (offset 364..365)
-//   u8_l vif_idx;                 // 1 byte (offset 366)
-//   u8_l chan_cnt;                // 1 byte (offset 367)
-//   u8_l ssid_cnt;                // 1 byte (offset 368)
-//   bool no_cck;                  // 1 byte (offset 369)
-//   u32_l duration;               // 4 bytes (offset 372..375, 4-byte aligned)
+//
+//	struct mac_chan_def chan[42]; // 42 * 6 = 252 bytes
+//	struct mac_ssid ssid[3];      // 3 * 33 = 99 bytes (offset 252..350)
+//	struct mac_addr bssid;        // 6 bytes (offset 352..357, 2-byte aligned)
+//	u32_l add_ies;                // 4 bytes (offset 360..363, 4-byte aligned)
+//	u16_l add_ie_len;             // 2 bytes (offset 364..365)
+//	u8_l vif_idx;                 // 1 byte (offset 366)
+//	u8_l chan_cnt;                // 1 byte (offset 367)
+//	u8_l ssid_cnt;                // 1 byte (offset 368)
+//	bool no_cck;                  // 1 byte (offset 369)
+//	u32_l duration;               // 4 bytes (offset 372..375, 4-byte aligned)
 type ScanStartReq struct {
 	Band       uint8
 	Channels   []ChannelInfo // up to MaxChannelsInReq
@@ -202,23 +203,63 @@ func (r *ScanStartReq) Decode(payload []byte) error {
 // ScanResultInd mirrors struct scan_result (lmac_msg.h). The firmware sends
 // one of these per BSS seen during a scan.
 type ScanResultInd struct {
-	Channel uint16 // channel number
-	Band    uint8  // 0 = 2G, 1 = 5G
-	Width   uint8  // channel width
-	RSSI    int8   // signal strength (signed)
-	RSSIMin int8
-	RSSIMax int8
-	BSSID   [6]byte
-	IE      []byte // information elements (raw 802.11 IE bytes)
-	SSID    string
+	Channel  uint16 // channel number
+	Band     uint8  // 0 = 2G, 1 = 5G
+	Width    uint8  // channel width
+	RSSI     int8   // signal strength (signed)
+	RSSIMin  int8
+	RSSIMax  int8
+	BSSID    [6]byte
+	IE       []byte // information elements (raw 802.11 IE bytes)
+	SSID     string
+	Security string // "open"/"wep"/"wpa"/"wpa2" (from beacon IEs)
+}
+
+// ClassifySecurity inspects a beacon/probe-resp tagged-IE blob plus the
+// capability Privacy bit and classifies the network's security.
+func ClassifySecurity(ies []byte, capabilities uint16) string {
+	hasRSN, hasWPA := false, false
+	for off := 0; off+2 <= len(ies); {
+		eid, elen := ies[off], int(ies[off+1])
+		if off+2+elen > len(ies) {
+			break
+		}
+		body := ies[off+2 : off+2+elen]
+		if eid == 48 {
+			hasRSN = true
+		} else if eid == 221 && len(body) >= 4 && body[0] == 0x00 && body[1] == 0x50 && body[2] == 0xf2 && body[3] == 0x01 {
+			hasWPA = true
+		}
+		off += 2 + elen
+	}
+	switch {
+	case hasRSN:
+		return "wpa2"
+	case hasWPA:
+		return "wpa"
+	case capabilities&0x0010 != 0:
+		return "wep"
+	default:
+		return "open"
+	}
 }
 
 func (r *ScanResultInd) Decode(payload []byte) error {
-	// Layout (struct scanu_result_ind in lmac_msg.h):
-	//   u16 length; u16 framectrl; u16 center_freq; u8 band; u8 sta_idx; u8 inst_nbr; s8 rssi; u16 pad;
-	//   u32 payload[]: raw 802.11 management frame body starting after framectrl:
-	//     u16 duration; u8 da[6]; u8 sa[6]; u8 bssid[6]; u16 seq_ctrl;
-	//     u64 timestamp; u16 beacon_int; u16 capab_info; u8 ies[];
+	// struct scanu_result_ind (12-byte fixed part, then the raw 802.11 frame):
+	//   u16 length; u16 framectrl; u16 center_freq; u8 band; u8 sta_idx;
+	//   u8 inst_nbr; s8 rssi; u16 _pad; u8 payload[length];
+	// The payload is a full 802.11 management frame (beacon/probe-resp):
+	//   [0]  u16 frame_control
+	//   [2]  u16 duration
+	//   [4]  u8  addr1[6]  (DA)
+	//   [10] u8  addr2[6]  (SA)
+	//   [16] u8  addr3[6]  (BSSID)
+	//   [22] u16 seq_ctrl
+	//   [24] u64 timestamp
+	//   [32] u16 beacon_interval
+	//   [34] u16 capability
+	//   [36] tagged IEs...        (offsetof(ieee80211_mgmt, u.beacon.variable))
+	const mgmtHdrLen = 36
 	if len(payload) < 12 {
 		return fmt.Errorf("scan result: short payload (%d)", len(payload))
 	}
@@ -229,13 +270,13 @@ func (r *ScanResultInd) Decode(payload []byte) error {
 	r.Channel = uint16(FreqToChannel(r.Band, freq))
 
 	mgmt := payload[12:]
-	if len(mgmt) >= 20 {
-		copy(r.BSSID[:], mgmt[14:20])
+	if len(mgmt) >= 22 {
+		copy(r.BSSID[:], mgmt[16:22])
 	}
-	if len(mgmt) >= 34 {
-		ies := mgmt[34:]
-		if frameLen > 34 && frameLen-34 <= len(ies) {
-			ies = ies[:frameLen-34]
+	if len(mgmt) >= mgmtHdrLen {
+		ies := mgmt[mgmtHdrLen:]
+		if frameLen > mgmtHdrLen && frameLen-mgmtHdrLen <= len(ies) {
+			ies = ies[:frameLen-mgmtHdrLen]
 		}
 		r.IE = append([]byte(nil), ies...)
 		for off := 0; off+2 <= len(ies); {

@@ -34,6 +34,7 @@ import "C"
 import (
 	"fmt"
 	"log"
+	"runtime"
 	"strings"
 	"time"
 	"unsafe"
@@ -48,17 +49,17 @@ const (
 	ProductAicOperational = 0x8d81
 
 	// Realtek RTL8xxx Wi-Fi dongles — WLAN mode (subset of common PIDs)
-	VendorRealtekWlan    = 0x0bda
-	ProductRealtek8811au = 0x8811
-	ProductRealtek8188eu = 0x8179
+	VendorRealtekWlan     = 0x0bda
+	ProductRealtek8811au  = 0x8811
+	ProductRealtek8188eu  = 0x8179
 	ProductRealtek8188ftv = 0x8188
 
 	// Realtek RTL815x USB LAN adapters — NOT Wi-Fi; must never match as WLAN.
-	VendorRealtekLan    = 0x0bda
-	ProductRealtek8156  = 0x8156
-	ProductRealtek8153  = 0x8153
-	ProductRealtek1100  = 0x1100
-	ProductRealtek1101  = 0x1101
+	VendorRealtekLan   = 0x0bda
+	ProductRealtek8156 = 0x8156
+	ProductRealtek8153 = 0x8153
+	ProductRealtek1100 = 0x1100
+	ProductRealtek1101 = 0x1101
 
 	// ZeroCD storage-mode PIDs (device presents as a USB drive until mode-switched)
 	// 0x174c is JMicron's vendor ID — Ugreen drive enclosures use JMicron bridges
@@ -226,6 +227,14 @@ func isStorageModeVIDPID(vid, pid uint16) bool {
 // regardless of whether another dongle is already active. Returns the first
 // mode-switched dongle's identifiers.
 func SwitchStorageDongleMode() (*DeviceInfo, error) {
+	// On macOS the libusb path below cannot work: IOUSBMassStorageDriver owns
+	// the storage interface, libusb_claim_interface fails, and the SCSI EJECT
+	// never reaches the device. Ask the OS to eject the volume instead.
+	// See modeswitch_darwin.go for why the disk match is as narrow as it is.
+	if runtime.GOOS == "darwin" {
+		return switchStorageDongleModeDarwin()
+	}
+
 	var ctx *C.libusb_context
 	if res := C.libusb_init(&ctx); res < 0 {
 		return nil, fmt.Errorf("failed to init libusb: %d", res)

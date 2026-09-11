@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/protocol"
 )
 
@@ -116,8 +115,11 @@ func TestLoopSkipsDataFrames(t *testing.T) {
 	}
 }
 
+// makeMsgIDPayload builds an RX ipc_e2a_msg header (12 bytes: id,
+// dummy_dest_id, dummy_src_id, param_len, pattern) with no parameters —
+// mirroring what the firmware puts on the wire for a zero-param CFM.
 func makeMsgIDPayload(id uint16) []byte {
-	b := make([]byte, lmac.HeaderSize)
+	b := make([]byte, protocol.E2AMsgHeaderSize)
 	binary.LittleEndian.PutUint16(b[0:2], id)
 	return b
 }

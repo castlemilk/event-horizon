@@ -16,6 +16,8 @@
     <string>AIC8800D80Driver</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 Event Horizon. All rights reserved.</string>
+    <key>OSBundleUsageDescription</key>
+    <string>Brings up the AIC8800D80 USB Wi-Fi 6 adapter as an additional network endpoint.</string>
     <key>IOKitPersonalities</key>
     <dict>
         <key>AIC8800D80-Operational-WiFi+BT</key>

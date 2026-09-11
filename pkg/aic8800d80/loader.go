@@ -438,7 +438,13 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	// shenmintao PR #35 + issue #58): the older MCU (chip_mcu_id=1)
 	// must have bit 0 of 0x40100020 set before firmware upload, else
 	// DBG_MEM_WRITE misbehaves / returns bogus confirmations.
-	if chipMCUID == 1 {
+	//
+	// BUT the STOCK AICSemi reference loader (aic_load_fw/aic_compat_8800d80.c)
+	// does NOT write 0x40100020 at all and still loads the full 351KB image
+	// across 0x170000 — the prime suspect for our 0x170000 write wedge is this
+	// cache bit turning the region past it into cache-backed / unwritable
+	// memory. AIC_VENDOR skips it to reproduce the stock path exactly.
+	if chipMCUID == 1 && os.Getenv("AIC_VENDOR") == "" {
 		cacheReg, err := protocol.MemRead(dev, 0x40100020)
 		if err != nil {
 			return fmt.Errorf("mcu1 cache fix: read 0x40100020: %w", err)
@@ -452,6 +458,17 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 	// Stop hardware watchdogs (syscfg_tbl_8800d80) so the chip doesn't reset mid-download
 	_ = protocol.MemWrite(dev, 0x70001408, 0x00000000)
 	_ = protocol.MemWrite(dev, 0x50017008, 0x00000000)
+
+	// VENDOR-MODE probe: the 8800d80x2 USB loader (aic_compat_8800d80x2.c
+	// syscfg_tbl) sets a CPU-performance/160MHz clock + extra config that the
+	// plain d80 path omits. Our 0x170000+ writes time out — a candidate cause
+	// is the upper RAM not being clocked/enabled. Apply the d80x2 syscfg before
+	// the fmac upload to see if it unlocks the region.
+	if os.Getenv("AIC_VENDOR") != "" {
+		_ = protocol.MemWrite(dev, 0x40500010, 0x00000006) // cpu performance / 160m clk
+		_ = protocol.MemWrite(dev, 0x40500024, 0x0000001f)
+		log.Printf("[AIC] VENDOR: applied d80x2 clock/perf syscfg (0x40500010=6, 0x40500024=0x1f)")
+	}
 
 	// Load firmware blobs.
 	bundle, err := protocol.LoadFirmwareBundle(l.fwDir, chipID)
@@ -616,6 +633,46 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			zones = []protocol.SkipZone{{Start: wall, End: 0xFFFFFFFF}}
 			log.Printf("[AIC] REGISTER-WINDOW SKIP MODE: loading only the %d bytes below 0x%x (boot feasibility experiment)",
 				int(wall)-int(ramFMACFW), wall)
+		case os.Getenv("AIC_FULL") != "":
+			// FULL MODE: write the ENTIRE image with NO zone skipping, in 16B
+			// chunks. If this is genuine hardware with real RAM past the wall
+			// (not a clone's MMIO), every write lands and the full firmware
+			// boots hole-free with a working rf_calib. If the writes wedge, the
+			// wall is real on this unit.
+			zones = []protocol.SkipZone{}
+			chunk = protocol.CloneSmallChunk
+			wordMode = false
+			log.Printf("[AIC] FULL MODE: 16B chunks, NO zone skip — full-image genuine-RAM test past 0x%x", wall)
+		case os.Getenv("AIC_VENDOR") != "":
+			// VENDOR-EXACT MODE: reproduce the AICSemi reference driver's
+			// firmware download — the WHOLE image in uniform 512-byte
+			// dbg_mem_block_write blocks, no wall distinction, no zone skip.
+			// The reference writes 512B blocks (rwnx_platform.c) and the
+			// 8800d80 dbg_mem_block_write_req carries memdata[512/sizeof(u32)]
+			// (=512B, "1024 for 8801"); our old 1KB split + register-zone skip
+			// was tuned against a WRONG (Amlogic sub-wall) image. Forcing
+			// wall=ramFMACFW routes every op through the smallChunk path.
+			// 256B is the verified-safe block size past 0x170000 (512B/1KB
+			// wedge there; DEFAULT mode wrote past the wall fine at 256B). Keep
+			// the 1KB-below-wall speed, use 256B above, but — unlike DEFAULT —
+			// DO NOT skip the register zones: write the FULL image so nothing
+			// is missing. If a genuine poison address wedges we'll see exactly
+			// which one and can skip only that word.
+			wall = protocol.CloneWallAddr
+			// Skip ONLY the 4 known point-poison words (evenly spaced every
+			// 0x2220 from 0x1701e0 to 0x176840 — the only addresses where the
+			// ROM wedges), not DEFAULT's ~26KB over-widened zone. Everything
+			// else past the wall writes fine at 256B, so the image is missing
+			// only ~128 bytes total.
+			zones = []protocol.SkipZone{
+				{Start: 0x1701e0, End: 0x170200},
+				{Start: 0x172400, End: 0x172440},
+				{Start: 0x174620, End: 0x174640},
+				{Start: 0x176840, End: 0x176860},
+			}
+			chunk = protocol.CloneSmallChunk
+			wordMode = false
+			log.Printf("[AIC] VENDOR MODE: 1KB below 0x%x, 256B above, skip only 4 point-poisons", protocol.CloneWallAddr)
 		default:
 			zones = protocol.CloneRegZones()
 			chunk = protocol.CloneSmallChunk
@@ -739,8 +796,19 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 			log.Printf("[AIC] op %d/%d (0x%08x) slow: %v", i+1, len(ops), op.Addr, d.Round(time.Millisecond))
 		}
 	}
-	log.Printf("[AIC] fmacfw upload complete: %d/%d ops, %d bytes placed, %d verification hole(s)",
-		len(ops), len(ops), writtenTotal, len(holes))
+	// Report whether verification actually RAN. Read-back is off by default
+	// because interleaving reads during upload can wedge the boot ROM, so the
+	// old unconditional "0 verification hole(s)" was not a clean bill of
+	// health — it printed identically whether the image landed perfectly or
+	// was never inspected at all.
+	if os.Getenv("AIC_VERIFY_WRITES") != "" {
+		log.Printf("[AIC] fmacfw upload complete: %d/%d ops, %d bytes placed, %d verification hole(s)",
+			len(ops), len(ops), writtenTotal, len(holes))
+	} else {
+		log.Printf("[AIC] fmacfw upload complete: %d/%d ops, %d bytes placed "+
+			"(writes NOT read back; set AIC_VERIFY_WRITES=1 to verify, at the risk of wedging the boot ROM)",
+			len(ops), len(ops), writtenTotal)
+	}
 	if len(holes) > 0 {
 		log.Printf("[AIC] WARNING: %d bytes did not retain: %v ... (firmware may misbehave)",
 			len(holes)*protocol.CloneSmallChunk, holes[:min(len(holes), 8)])
@@ -907,16 +975,26 @@ func (l *Loader) uploadFirmware(ctx context.Context, res *LoadFirmwareResult) er
 		protocol.VID_AIC8800D80_OpWiFiBT, protocol.PID_AIC8800D80_OpWiFiBT,
 		10*time.Second, 250*time.Millisecond)
 	if err != nil {
-		// Try the WiFi-only operational PID.
+		// Try the WiFi-only operational PID, then the identity the vendor's
+		// chip_id=7 Windows firmware enumerates as (368b:8d85).
 		alt, altErr := protocol.WaitForReenumeration(ctx,
 			protocol.VID_AIC8800D80_OpWiFi, protocol.PID_AIC8800D80_OpWiFi,
 			2*time.Second, 250*time.Millisecond)
 		if altErr != nil {
-			// Diagnose the failure mode: a firmware crash usually resets
-			// the chip back to BootROM (fast iteration possible); a
-			// totally silent device needs a power cycle.
+			alt, altErr = protocol.WaitForReenumeration(ctx,
+				protocol.VID_AIC8800D80_OpWin, protocol.PID_AIC8800D80_OpWin,
+				2*time.Second, 250*time.Millisecond)
+		}
+		if altErr != nil {
+			// Diagnose the failure mode. A firmware crash re-enumerates as
+			// BootROM (0x8d80), but on the Pandora clone that ROM comes back
+			// DEAD: it answers EP0/enumeration yet its command processor no
+			// longer accepts DBG transfers (verified 2026-09-01 — a --probe
+			// right after a crash reads 0x40500000 as UNREADABLE). Only a
+			// true VBUS drop recovers it, so a re-upload without a physical
+			// replug will fail. Recover with scripts/aic-zerocd-eject.sh.
 			if _, boErr := protocol.OpenByVIDPID(c, protocol.VID_AIC8800D80_BootROM, protocol.PID_AIC8800D80_BootROM); boErr == nil {
-				log.Printf("[AIC] firmware did not boot — device is back in boot ROM (crash/reset); can re-upload without a power cycle")
+				log.Printf("[AIC] firmware did not boot — device fell back to boot ROM (0x8d80). On this clone that ROM is wedged; unplug the dongle ~10s and re-run (scripts/aic-zerocd-eject.sh drives the whole cycle).")
 				return fmt.Errorf("waiting for operational re-enumeration: firmware crashed back to boot ROM: %w", err)
 			}
 			return fmt.Errorf("waiting for operational re-enumeration: %w (device silent — power-cycle required)", err)

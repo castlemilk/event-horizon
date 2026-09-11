@@ -28,11 +28,11 @@ type HardwareTopology struct {
 
 // hardwarePort describes a macOS hardware port from networksetup.
 type hardwarePort struct {
-	Name    string
-	Device  string
-	MAC     string
-	IsWiFi  bool
-	IsUSB   bool
+	Name   string
+	Device string
+	MAC    string
+	IsWiFi bool
+	IsUSB  bool
 }
 
 // enumerateHardwarePorts reads `networksetup -listallhardwareports` to map BSD

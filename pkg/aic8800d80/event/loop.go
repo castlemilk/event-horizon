@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/castlemilk/event-horizon/pkg/aic8800d80/lmac"
 	"github.com/castlemilk/event-horizon/pkg/aic8800d80/protocol"
 )
 
@@ -19,6 +18,19 @@ type FrameSource interface {
 type Loop struct {
 	src  FrameSource
 	sink Sink
+}
+
+// Stopper is implemented by frame sources with background activity that
+// must be halted before the USB session is torn down.
+type Stopper interface {
+	Stop()
+}
+
+// Stop propagates a halt to the frame source, if it supports it.
+func (l *Loop) Stop() {
+	if st, ok := l.src.(Stopper); ok {
+		st.Stop()
+	}
 }
 
 // NewLoop creates a Loop.
@@ -35,18 +47,27 @@ func (l *Loop) Run(ctx context.Context) error {
 			// EOF / closed source / ctx cancellation = clean exit.
 			return nil
 		}
+		if f.Type == protocol.USBTypeDataCfm {
+			// TX confirm: payload is u32 confirm ids, not an ipc_e2a_msg.
+			if d, ok := l.sink.(*Dispatch); ok && d != nil && d.OnTxCfm != nil {
+				d.OnTxCfm(f.Payload)
+			}
+			continue
+		}
 		if !f.IsConfig() {
 			if l.sink != nil && len(f.Payload) >= 24 {
 				_ = l.sink.Handle(ctx, 0xFFFF, f.Payload)
 			}
 			continue
 		}
-		if len(f.Payload) < lmac.HeaderSize {
+		if len(f.Payload) < protocol.E2AMsgHeaderSize {
 			log.Printf("[event] short config frame (%d bytes), dropping", len(f.Payload))
 			continue
 		}
 		msgID := f.MsgID()
-		param := f.Payload[lmac.HeaderSize:]
+		// RX param starts after the 12-byte ipc_e2a_msg header (which
+		// includes the u32 `pattern` word), not the 8-byte TX header.
+		param := f.Param()
 		if err := l.sink.Handle(ctx, msgID, param); err != nil {
 			if _, ok := err.(*Fatal); ok {
 				return fmt.Errorf("event loop fatal: %w", err)

@@ -134,6 +134,19 @@ func handleRequest(req JSONRPCRequest) {
 	}
 }
 
+// daemonGet fetches a daemon endpoint, returning the body or an error. It
+// exists so a tool never has to decide what to invent when the daemon is down:
+// the answer is always to say it is down.
+func daemonGet(url string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	return string(b), err
+}
+
 func getAvailableTools() []Tool {
 	return []Tool{
 		{
@@ -193,6 +206,47 @@ func getAvailableTools() []Tool {
 				Type:       "object",
 				Properties: map[string]Property{},
 			},
+		},
+		{
+			Name: "usbwifi_link_status",
+			Description: "Current state of the dongle link bring-up state machine (idle, no_dongle, " +
+				"needs_replug, flashing, associating, handshaking, configuring, up, down, failed), " +
+				"plus the recorded history of every transition with how long each state was held. " +
+				"This is how you find out what actually happened during a bring-up.",
+			InputSchema: InputSchema{Type: "object", Properties: map[string]Property{}},
+		},
+		{
+			Name: "usbwifi_link_start",
+			Description: "Bring the dongle link up end to end: flash the chip if needed, associate with " +
+				"the SSID, run the WPA2 4-way handshake, take a DHCP lease, and bridge it to a utun " +
+				"interface with a host route. Returns immediately; poll usbwifi_link_status. If the chip " +
+				"has already run firmware it reports needs_replug — only a physical power cycle clears " +
+				"that, and the machine waits for it.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"ssid":    {Type: "string", Description: "SSID to join"},
+					"pass":    {Type: "string", Description: "WPA2 passphrase (omit for an open network)"},
+					"channel": {Type: "number", Description: "Channel to associate on; 0 to scan for it"},
+					"route": {Type: "string", Description: "Comma-separated hosts to route through the " +
+						"bridge (default 192.168.100.1, the Starlink dish)"},
+				},
+				Required: []string{"ssid"},
+			},
+		},
+		{
+			Name: "usbwifi_link_stop",
+			Description: "Tear the dongle link down, releasing the utun interface and its host routes. " +
+				"Use before starting a new link: only one bring-up runs at a time, because two would " +
+				"fight over the single physical radio.",
+			InputSchema: InputSchema{Type: "object", Properties: map[string]Property{}},
+		},
+		{
+			Name: "usbwifi_modeswitch",
+			Description: "Mode-switch a ZeroCD storage-mode dongle so it re-enumerates in boot-ROM mode, " +
+				"ready for firmware. On macOS this ejects the dongle's volume through the OS storage " +
+				"stack, because libusb cannot claim an interface that IOUSBMassStorageDriver already owns.",
+			InputSchema: InputSchema{Type: "object", Properties: map[string]Property{}},
 		},
 		{
 			Name:        "aic8800d80_detect_stage",
@@ -258,6 +312,60 @@ func executeTool(name string, args map[string]interface{}) ToolCallResult {
 		text, _ := json.MarshalIndent(chipsets, "", "  ")
 		return makeResult(string(text))
 
+	case "usbwifi_link_status":
+		body, err := daemonGet(daemonURL + "/api/wifi/link")
+		if err != nil {
+			return makeError(fmt.Sprintf("cannot reach the daemon at %s: %v", daemonURL, err))
+		}
+		return makeResult(body)
+
+	case "usbwifi_link_start":
+		ssid, _ := args["ssid"].(string)
+		if ssid == "" {
+			return makeError("Missing required parameter: ssid")
+		}
+		payload := map[string]any{"ssid": ssid}
+		if v, ok := args["pass"].(string); ok {
+			payload["pass"] = v
+		}
+		if v, ok := args["channel"].(float64); ok {
+			payload["channel"] = int(v)
+		}
+		if v, ok := args["route"].(string); ok && v != "" {
+			payload["route"] = v
+		}
+		jsonData, _ := json.Marshal(payload)
+		resp, err := http.Post(daemonURL+"/api/wifi/link", "application/json", bytes.NewBuffer(jsonData))
+		if err != nil {
+			// Never claim a bring-up started when the request did not land.
+			return makeError(fmt.Sprintf("cannot reach the daemon at %s: %v", daemonURL, err))
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return makeResult(string(b))
+
+	case "usbwifi_link_stop":
+		req, _ := http.NewRequest(http.MethodDelete, daemonURL+"/api/wifi/link", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return makeError(fmt.Sprintf("cannot reach the daemon at %s: %v", daemonURL, err))
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return makeResult(string(b))
+
+	case "usbwifi_modeswitch":
+		resp, err := http.Post(daemonURL+"/api/usb/modeswitch", "application/json", nil)
+		if err != nil {
+			return makeError(fmt.Sprintf("cannot reach the daemon at %s: %v", daemonURL, err))
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			return makeError(fmt.Sprintf("mode-switch failed: %s", string(b)))
+		}
+		return makeResult(string(b))
+
 	case "usbwifi_get_hardware_topology":
 		nodes := usb.GetHardwareTopology()
 		text, _ := json.MarshalIndent(nodes, "", "  ")
@@ -276,8 +384,11 @@ func executeTool(name string, args map[string]interface{}) ToolCallResult {
 			body, _ := io.ReadAll(resp.Body)
 			return makeResult(string(body))
 		}
-		fallback := `[{"ssid":"SFH","bssid":"00:13:02:8f:9a:33","rssi":-40,"channel":44,"security":"WPA2-PSK","is_selected":true},{"ssid":"aliens exist","bssid":"00:13:02:8f:9a:11","rssi":-42,"channel":149,"security":"WPA2/WPA3-PSK","is_selected":false}]`
-		return makeResult(fallback)
+		// No invented scan results. This used to return two hardcoded SSIDs
+		// when the daemon was unreachable, which is indistinguishable from a
+		// real scan to anyone reading the output — a caller would believe those
+		// networks were in range. A scan that did not happen is an error.
+		return makeError(fmt.Sprintf("cannot reach the daemon at %s to scan: %v", daemonURL, err))
 
 	case "usbwifi_connect_hotspot":
 		ssid, _ := args["ssid"].(string)
@@ -293,7 +404,9 @@ func executeTool(name string, args map[string]interface{}) ToolCallResult {
 		jsonData, _ := json.Marshal(payload)
 		resp, err := http.Post(daemonURL+"/api/wifi/connect", "application/json", bytes.NewBuffer(jsonData))
 		if err != nil {
-			return makeResult(fmt.Sprintf("Initiated USB Wi-Fi connection to SSID '%s' (Passphrase: '%s'). Handshake active.", ssid, pass))
+			// This used to report "Handshake active" for a request that never
+			// reached the daemon, and echo the passphrase back while doing it.
+			return makeError(fmt.Sprintf("cannot reach the daemon at %s to connect to %q: %v", daemonURL, ssid, err))
 		}
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
@@ -328,7 +441,7 @@ func executeTool(name string, args map[string]interface{}) ToolCallResult {
 			return makeError(fmt.Sprintf("detect stage: %v", err))
 		}
 		out := map[string]interface{}{
-			"stage": stage.String(),
+			"stage":     stage.String(),
 			"stage_int": int(stage),
 		}
 		switch stage {
@@ -371,14 +484,14 @@ func executeTool(name string, args map[string]interface{}) ToolCallResult {
 			return makeResult(string(text))
 		}
 		out := map[string]interface{}{
-			"status": "OK",
-			"from_stage": res.FromStage.String(),
-			"to_stage": res.ToStage.String(),
-			"chip_rev": res.ChipRev,
-			"chip_mcu_id": res.ChipMCUID,
-			"boot_addr": fmt.Sprintf("0x%x", res.BootAddr),
+			"status":         "OK",
+			"from_stage":     res.FromStage.String(),
+			"to_stage":       res.ToStage.String(),
+			"chip_rev":       res.ChipRev,
+			"chip_mcu_id":    res.ChipMCUID,
+			"boot_addr":      fmt.Sprintf("0x%x", res.BootAddr),
 			"bytes_uploaded": res.BytesUploaded,
-			"duration_ms": res.Duration.Milliseconds(),
+			"duration_ms":    res.Duration.Milliseconds(),
 		}
 		text, _ := json.MarshalIndent(out, "", "  ")
 		return makeResult(string(text))

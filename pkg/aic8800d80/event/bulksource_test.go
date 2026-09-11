@@ -10,9 +10,9 @@ import (
 )
 
 type fakeBulk struct {
-	chunks [][]byte
+	chunks   [][]byte
 	errAfter int // return error once after this many reads (-1 = never)
-	reads  int
+	reads    int
 }
 
 func (f *fakeBulk) BulkIn(buf []byte, _ int) (int, error) {
@@ -28,6 +28,10 @@ func (f *fakeBulk) BulkIn(buf []byte, _ int) (int, error) {
 	copy(buf, c)
 	return len(c), nil
 }
+
+func (f *fakeBulk) HasMsgIn() bool { return false }
+
+func (f *fakeBulk) MsgIn(buf []byte, _ int) (int, error) { return 0, nil }
 
 func cfgFrame(id uint16) []byte {
 	b := make([]byte, 4+4)

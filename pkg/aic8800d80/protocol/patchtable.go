@@ -74,12 +74,12 @@ func ParsePatchTable(blob []byte) ([]PatchTable, error) {
 // PatchInfo carries the real RAM addresses and control values unpacked
 // from the AICBT_PT_INF entry (aicbt_patch_info_unpack).
 type PatchInfo struct {
-	AddrAdid    uint32
-	AddrPatch   uint32
-	ResetAddr   uint32
-	ResetVal    uint32
+	AddrAdid     uint32
+	AddrPatch    uint32
+	ResetAddr    uint32
+	ResetVal     uint32
 	AdidFlagAddr uint32
-	AdidFlag    uint32
+	AdidFlag     uint32
 	// ExtPatchNb + (id, addr) pairs for supplementary patch blobs
 	// (fw_patch_*_ext<id>.bin).
 	ExtPatchNb   uint32
@@ -100,22 +100,25 @@ func UnpackPatchInfo(tables []PatchTable) (*PatchInfo, error) {
 		}
 		const baseLen = 4
 		pi := &PatchInfo{}
-		n := int(t.Len)
-		if n > baseLen+1 && len(t.Data) >= (baseLen+1)*2 {
-			// full form with ext patch info
-			n = baseLen + 1
-		} else if n > baseLen {
-			n = baseLen
-		}
-		if n < baseLen {
+		// Older (e.g. Allwinner A40/Android7) patch tables carry only 3 pairs
+		// — (adid_addrinf, addr_adid), (patch_addrinf, addr_patch),
+		// (reset_addr, reset_val) — omitting the 4th (adid_flag) pair, which in
+		// the newer form just repeats the reset write (0x40500150 = 1). Accept
+		// 3-pair tables and synthesise adid_flag from the reset pair.
+		if t.Len < 3 || len(t.Data) < 6 {
 			return nil, fmt.Errorf("patch info: table too short (%d pairs)", t.Len)
 		}
 		pi.AddrAdid = t.Data[1]
 		pi.AddrPatch = t.Data[3]
 		pi.ResetAddr = t.Data[4]
 		pi.ResetVal = t.Data[5]
-		pi.AdidFlagAddr = t.Data[6]
-		pi.AdidFlag = t.Data[7]
+		if t.Len >= baseLen && len(t.Data) >= 8 {
+			pi.AdidFlagAddr = t.Data[6]
+			pi.AdidFlag = t.Data[7]
+		} else {
+			pi.AdidFlagAddr = t.Data[4] // reuse reset write for the 3-pair form
+			pi.AdidFlag = t.Data[5]
+		}
 		if t.Len > baseLen && len(t.Data) >= (baseLen+1)*2 {
 			pi.ExtPatchNb = t.Data[(baseLen+1)*2-1]
 			for i := 0; i < int(pi.ExtPatchNb); i++ {
@@ -129,5 +132,17 @@ func UnpackPatchInfo(tables []PatchTable) (*PatchInfo, error) {
 		}
 		return pi, nil
 	}
-	return nil, fmt.Errorf("patch info: no AICBT_PT_INF (type 0) entry in table")
+	// No AICBT_PT_INF section. The Windows loader (aicloadfw.sys, extracted
+	// from the UGREEN AX900's ZeroCD volume) ships a 5-section table with no
+	// PINF and instead hardcodes the U02 addresses — the same defaults the
+	// Linux reference uses (FW_RAM_ADID_BASE_ADDR_8800D80_U02 /
+	// FW_RAM_PATCH_BASE_ADDR_8800D80_U02, reset via 0x40500150 = 1).
+	return &PatchInfo{
+		AddrAdid:     0x00201940,
+		AddrPatch:    0x0020B43C,
+		ResetAddr:    0x40500150,
+		ResetVal:     0x00000001,
+		AdidFlagAddr: 0x40500150,
+		AdidFlag:     0x00000001,
+	}, nil
 }

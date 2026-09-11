@@ -47,6 +47,10 @@ func runCmdCtl(args []string) int {
 		return runCmdListen(ctx, args[1:])
 	case "probe":
 		return runCmdProbe(ctx)
+	case "bringup":
+		return runCmdBringup(ctx, args[1:])
+	case "link":
+		return runCmdLink(ctx, args[1:])
 	case "help", "-h", "--help":
 		usageCmdCtl()
 		return 0
@@ -69,17 +73,10 @@ type session struct {
 	cancel    context.CancelFunc
 }
 
-// openSession opens the operational device and starts the event loop.
-func openSession(ctx context.Context) (*session, error) {
-	dev, err := protocol.OpenOperational(ctx)
-	if err != nil {
-		return nil, err
-	}
-	s := &session{
-		sess:  dev,
-		ackCh: make(chan uint16, 64),
-	}
-	s.dispatch = &event.Dispatch{
+// defaultDispatch is the human-readable dispatch used by interactive
+// send/probe commands. bringup builds its own to capture the vif.
+func defaultDispatch() *event.Dispatch {
+	return &event.Dispatch{
 		OnScanResult: func(r lmac.ScanResultInd) {
 			lock := r.SSID
 			if lock == "" {
@@ -116,6 +113,26 @@ func openSession(ctx context.Context) (*session, error) {
 			log.Printf("unhandled msg id 0x%04x", msgID)
 		},
 	}
+}
+
+// openSession opens the operational device with the default dispatch.
+func openSession(ctx context.Context) (*session, error) {
+	return openSessionWith(ctx, defaultDispatch())
+}
+
+// openSessionWith opens the operational device and starts the event loop
+// with a caller-supplied dispatch (set fully before this call — the loop
+// reads its func fields concurrently).
+func openSessionWith(ctx context.Context, d *event.Dispatch) (*session, error) {
+	dev, err := protocol.OpenOperational(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s := &session{
+		sess:  dev,
+		ackCh: make(chan uint16, 64),
+	}
+	s.dispatch = d
 
 	src := event.NewBulkFrameSource(dev, 200)
 	tee := &ackTeeSource{inner: src, acks: s.ackCh}
@@ -135,7 +152,8 @@ func openSession(ctx context.Context) (*session, error) {
 	return s, nil
 }
 
-// close stops the loop and releases the USB session.
+// close stops the loop, halts the RX pumps (so no bulk transfer is in
+// flight), and releases the USB session.
 func (s *session) close() {
 	if s.cancel != nil {
 		s.cancel()
@@ -146,6 +164,9 @@ func (s *session) close() {
 		case <-time.After(3 * time.Second):
 			log.Printf("event loop did not stop within 3s; releasing device anyway")
 		}
+	}
+	if s.loop != nil {
+		s.loop.Stop()
 	}
 	s.sess.Close()
 }
@@ -166,6 +187,14 @@ func (t *ackTeeSource) Next(ctx context.Context) (protocol.RxFrame, error) {
 		}
 	}
 	return f, err
+}
+
+// Stop delegates to the inner source so the pumps halt before libusb_exit
+// (a mid-flight bulk read + libusb_exit segfaults).
+func (t *ackTeeSource) Stop() {
+	if st, ok := t.inner.(event.Stopper); ok {
+		st.Stop()
+	}
 }
 
 func bandName(b uint8) string {
@@ -343,6 +372,7 @@ func runCmdListen(ctx context.Context, args []string) int {
 	case <-done:
 	case <-time.After(2 * time.Second):
 	}
+	loop.Stop()
 
 	ids := make([]uint16, 0, len(counts))
 	for id := range counts {
@@ -451,5 +481,24 @@ Commands:
        --timeout 4s                   ACK timeout
   listen [--duration 10s]             Passive tap on bulk IN config frames
   probe                               Endpoint dump + raw RX sniff + TX retry
+
+  link --ssid <name> [options]        Bring the whole link up in one command:
+                                      flash -> stack -> associate -> WPA2 ->
+                                      DHCP -> utun bridge. Replaces the old
+                                      three-step sequence.
+       --pass <passphrase>            WPA2 passphrase (omit for an open AP)
+       --channel <n> --bssid <mac>    Target BSS (both recommended; --bssid is
+                                      required for hidden APs)
+       --route 192.168.100.1          Hosts to route through the bridge
+       --skip-flash                   Reuse the running firmware instance
+       --force                        Proceed on an already-used instance
+
+  bringup [options]                   The individual stages, for debugging.
+                                      Prefer 'link' unless you need one stage.
+
+A clean run needs freshly flashed firmware, and this chip only re-enters
+flashable ZeroCD mode on a physical unplug/replug. 'link' detects the USB
+state and asks for a replug rather than producing results from a radio that
+cannot be trusted.
 `)
 }

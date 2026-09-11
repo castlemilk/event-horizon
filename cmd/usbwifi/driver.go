@@ -1,9 +1,10 @@
 // driver subcommand — wraps the DriverKit driver install/uninstall flow.
 //
 // Usage:
-//   sudo ./bin/usbwifi driver install
-//   sudo ./bin/usbwifi driver uninstall
-//   ./bin/usbwifi driver status
+//
+//	sudo ./bin/usbwifi driver install
+//	sudo ./bin/usbwifi driver uninstall
+//	./bin/usbwifi driver status
 //
 // This is the entry point for end users. It compiles the DriverKit
 // driver (if needed), signs it, copies it to /Library/SystemExtensions,

@@ -53,6 +53,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"unsafe"
 )
 
@@ -82,32 +83,40 @@ func NewUtun() (*Interface, error) {
 	}, nil
 }
 
-// ConfigureIP sets IP address and routing parameters on the virtual utun interface
+// ConfigureIP sets the address and peer on the utun interface.
+//
+// Both this and AddHostRoute used to log a failure and return nil, so a bridge
+// could report itself up while its interface had no address and no route. They
+// now return the error with the command's own output attached — that text is
+// usually the whole diagnosis ("File exists", "Permission denied").
 func (t *Interface) ConfigureIP(ip, netmask, gateway string) error {
 	log.Printf("[TUN] Configuring %s with IP %s, Gateway %s...", t.Name, ip, gateway)
 
-	// ifconfig utunX ip gateway netmask netmask
+	// ifconfig utunX <local> <peer> netmask <mask> up
 	cmd := exec.Command("ifconfig", t.Name, ip, gateway, "netmask", netmask, "up")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("[TUN] ifconfig warning: %s (%v)", string(output), err)
-	} else {
-		log.Printf("[TUN] Interface %s configured successfully: %s", t.Name, string(output))
+		return fmt.Errorf("ifconfig %s %s: %w: %s", t.Name, ip, err, strings.TrimSpace(string(output)))
 	}
-
+	log.Printf("[TUN] Interface %s configured: %s", t.Name, strings.TrimSpace(string(output)))
 	return nil
 }
 
-// AddStarlinkRoute adds a static host route to Starlink Dish telemetry 192.168.100.1 via this interface
-func (t *Interface) AddStarlinkRoute() error {
-	log.Printf("[TUN] Adding static route for Starlink Dish (192.168.100.1) via %s...", t.Name)
-	cmd := exec.Command("route", "-n", "add", "-host", "192.168.100.1", "-interface", t.Name)
+// AddHostRoute points a single destination at this interface, leaving every
+// other route — and therefore the host's own en0 traffic — alone.
+func (t *Interface) AddHostRoute(dst string) error {
+	log.Printf("[TUN] Routing %s via %s...", dst, t.Name)
+	cmd := exec.Command("route", "-n", "add", "-host", dst, "-interface", t.Name)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Printf("[TUN] Route command: %s (%v)", string(output), err)
+		return fmt.Errorf("route add -host %s -interface %s: %w: %s",
+			dst, t.Name, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
+
+// AddStarlinkRoute routes the dish's telemetry address through this interface.
+func (t *Interface) AddStarlinkRoute() error { return t.AddHostRoute("192.168.100.1") }
 
 func (t *Interface) Close() {
 	if t.File != nil {

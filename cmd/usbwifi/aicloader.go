@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -63,8 +64,15 @@ func runAICLoader(args []string) int {
 	probeWindow := fs.Bool("probe-window", false, "EXPERIMENT: sweep the wedge-zone boundaries past zone ends (word + 16B writes and readbacks at each address; first wedge stops). Optional start index to continue a sweep after a power cycle.")
 	poisonMap := fs.Bool("poison-map", false, "EXPERIMENT: word-write every 4B address in 0x170210..0x1776b8 (30,392 B total, skips known zones) to test the ~9.1KB write-budget theory vs a single poison at 0x172430. Completes -> no budget, full window loadable. Write wedge -> poison (appended to /tmp/aic-poisons.txt), resume with start index.")
 	retentionMap := fs.Bool("retention-map", false, "EXPERIMENT: map which write path (word vs 16B) retains at each 16B address in 0x170000..0x17238f. 20B writes/address, 11,280 B total — one power cycle. Writes /tmp/aic-retention.txt for the AIC_HYBRID loader mode.")
+	writeMode := fs.String("write-mode", "", "firmware write strategy (survives sudo, unlike AIC_* env): 'vendor'=uniform 512B blocks, no wall/zone skip (matches the AICSemi reference driver)")
 	if err := fs.Parse(args); err != nil {
 		return 1
+	}
+
+	// Map --write-mode onto the loader's AIC_* env switch so it works under
+	// sudo (which strips the environment).
+	if *writeMode == "vendor" {
+		os.Setenv("AIC_VENDOR", "1")
 	}
 
 	log.SetPrefix("[aicloader] ")
@@ -99,15 +107,17 @@ func runAICLoader(args []string) int {
 	// Stop the running daemon if requested. The daemon keeps the USB
 	// device claimed; we need to release it before opening our own.
 	if *killDaemon {
-		// The macOS app's RuntimeSupervisor respawns the daemon every
-		// few seconds, and each respawn opens the dongle. Killing only
-		// the daemon leaves the app to re-grab the device mid-upload,
-		// which is how a firmware write dies with LIBUSB_ERROR_TIMEOUT
-		// partway through. Stop the app first, then the daemon.
-		log.Printf("stopping the Event Horizon app so it cannot respawn the daemon...")
-		_ = exec.Command("pkill", "-9", "-f", "Event Horizon.app").Run()
-		_ = exec.Command("pkill", "-9", "-f", "EventHorizonApp").Run()
-
+		// This used to SIGKILL the Event Horizon app as well, on the grounds
+		// that its supervisor respawns the daemon and each respawn opens the
+		// dongle mid-upload. The app itself never opens the device — it has no
+		// libusb and talks HTTP to the daemon — so killing it freed nothing,
+		// and it cost the user their menu bar app on every firmware write.
+		//
+		// The rival-daemon worry is real but belongs in the supervisor, which
+		// now declines to start a second daemon when one of its own build is
+		// already answering. If a respawn does race a flash, the upload fails
+		// loudly rather than silently, which is the trade worth making against
+		// killing an app the user is looking at.
 		log.Printf("stopping running usbwifi / usbwifi-mcp daemon...")
 		// Graceful stop first so utun is torn down cleanly; SIGKILL only
 		// if it does not go.
@@ -118,11 +128,41 @@ func runAICLoader(args []string) int {
 
 		// Wait for USB exclusive ownership to actually release, rather
 		// than a fixed 500ms that was sometimes too short.
+		stopped := false
 		for range 20 {
 			if exec.Command("pgrep", "-x", "usbwifi").Run() != nil {
+				stopped = true
 				break // no usbwifi process remains
 			}
 			time.Sleep(200 * time.Millisecond)
+		}
+
+		// Every pkill above discards its result, so a kill that was not
+		// permitted looked exactly like a kill that worked. The daemon normally
+		// runs as root — the supervisor starts it with `sudo -n ./bin/usbwifi`
+		// — and pkill from an unprivileged process cannot signal it, so
+		// --kill-daemon silently did nothing and we walked into the firmware
+		// write still believing the device was free.
+		//
+		// That is precisely the scenario the comment above warns about: the
+		// other process re-grabs the dongle mid-upload and the write dies
+		// partway with LIBUSB_ERROR_TIMEOUT, leaving the chip needing a power
+		// cycle. Refuse instead — a clear stop beats a half-written firmware.
+		if !stopped {
+			owner := "another user"
+			if out, err := exec.Command("ps", "-axo", "user=,comm=").Output(); err == nil {
+				for _, ln := range strings.Split(string(out), "\n") {
+					f := strings.Fields(ln)
+					if len(f) == 2 && strings.HasSuffix(f[1], "usbwifi") {
+						owner = f[0]
+						break
+					}
+				}
+			}
+			log.Printf("the usbwifi daemon is still running (owned by %s) after --kill-daemon; "+
+				"it holds the USB device, and a firmware upload started now can die partway and "+
+				"leave the chip needing a power cycle. Re-run with sudo, or stop the daemon first.", owner)
+			return 1
 		}
 		time.Sleep(500 * time.Millisecond)
 	}

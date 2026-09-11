@@ -1,0 +1,458 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		3D8E9CEA85C55740BD9A976B /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 209919518C9DD75D30EECD8B /* main.swift */; };
+		624A15BC2CD119AB90BCCFDE /* AIC8800D80Driver.iig in Sources */ = {isa = PBXBuildFile; fileRef = 8E2B5F4FC4AF3413E43B2831 /* AIC8800D80Driver.iig */; };
+		7EED0EF6209EC90A4DE6E21A /* AIC8800D80Driver.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 56CB5283432C1B71D4218DB4 /* AIC8800D80Driver.cpp */; };
+		97468EA0BC3E24E8A1ABBB30 /* AIC8800D80Driver.dext in Embed System Extensions */ = {isa = PBXBuildFile; fileRef = 72A669FE9F181AD0C5C951F1 /* AIC8800D80Driver.dext */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9C3E262A0D8EB6E5AB462DF9 /* USBDriverKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 087E1DCE37694D5CFFAFDFE3 /* USBDriverKit.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		2C50088F7831F8CBD46DCB46 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EC1CBB6CB41FB9BA20CAA198 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8BA0261A54AB85E9A40D04EC;
+			remoteInfo = AIC8800D80Driver;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		475A2B4014C5DD4BC788474D /* Embed System Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(SYSTEM_EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+				97468EA0BC3E24E8A1ABBB30 /* AIC8800D80Driver.dext in Embed System Extensions */,
+			);
+			name = "Embed System Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		087E1DCE37694D5CFFAFDFE3 /* USBDriverKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = USBDriverKit.framework; path = System/Library/Frameworks/USBDriverKit.framework; sourceTree = SDKROOT; };
+		209919518C9DD75D30EECD8B /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		56CB5283432C1B71D4218DB4 /* AIC8800D80Driver.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = AIC8800D80Driver.cpp; sourceTree = "<group>"; };
+		72A669FE9F181AD0C5C951F1 /* AIC8800D80Driver.dext */ = {isa = PBXFileReference; explicitFileType = "wrapper.driver-extension"; includeInIndex = 0; path = AIC8800D80Driver.dext; sourceTree = BUILT_PRODUCTS_DIR; };
+		8E2B5F4FC4AF3413E43B2831 /* AIC8800D80Driver.iig */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.iig; path = AIC8800D80Driver.iig; sourceTree = "<group>"; };
+		F59C6782FDC7C8B4A6E26675 /* EventHorizonActivator.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EventHorizonActivator.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		195B1D11FC641BF54CDF9783 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9C3E262A0D8EB6E5AB462DF9 /* USBDriverKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		538C3995E2BAB74832B3AC88 /* Activator */ = {
+			isa = PBXGroup;
+			children = (
+				209919518C9DD75D30EECD8B /* main.swift */,
+			);
+			path = Activator;
+			sourceTree = "<group>";
+		};
+		9CB02FAFB81C38986DEFDD5F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				087E1DCE37694D5CFFAFDFE3 /* USBDriverKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		9E0B0F689F3D6E2839E9C6B5 /* AIC8800D80 */ = {
+			isa = PBXGroup;
+			children = (
+				56CB5283432C1B71D4218DB4 /* AIC8800D80Driver.cpp */,
+				8E2B5F4FC4AF3413E43B2831 /* AIC8800D80Driver.iig */,
+			);
+			path = AIC8800D80;
+			sourceTree = "<group>";
+		};
+		C71E02CB0BF7AA995D03CCC8 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				72A669FE9F181AD0C5C951F1 /* AIC8800D80Driver.dext */,
+				F59C6782FDC7C8B4A6E26675 /* EventHorizonActivator.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D1C83A2C863AE93D56BA697E = {
+			isa = PBXGroup;
+			children = (
+				538C3995E2BAB74832B3AC88 /* Activator */,
+				9E0B0F689F3D6E2839E9C6B5 /* AIC8800D80 */,
+				9CB02FAFB81C38986DEFDD5F /* Frameworks */,
+				C71E02CB0BF7AA995D03CCC8 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8BA0261A54AB85E9A40D04EC /* AIC8800D80Driver */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4F766E445039619AC328EED9 /* Build configuration list for PBXNativeTarget "AIC8800D80Driver" */;
+			buildPhases = (
+				81EA37004330B6BD73C3DA88 /* Sources */,
+				195B1D11FC641BF54CDF9783 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AIC8800D80Driver;
+			packageProductDependencies = (
+			);
+			productName = AIC8800D80Driver;
+			productReference = 72A669FE9F181AD0C5C951F1 /* AIC8800D80Driver.dext */;
+			productType = "com.apple.product-type.driver-extension";
+		};
+		F081B220850DD407B6C4AEAA /* EventHorizonActivator */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7C8AB197739200ABE8D35AEA /* Build configuration list for PBXNativeTarget "EventHorizonActivator" */;
+			buildPhases = (
+				D336FB47BD53D07EF6A7D108 /* Sources */,
+				475A2B4014C5DD4BC788474D /* Embed System Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4709A60F264A2683D6361048 /* PBXTargetDependency */,
+			);
+			name = EventHorizonActivator;
+			packageProductDependencies = (
+			);
+			productName = EventHorizonActivator;
+			productReference = F59C6782FDC7C8B4A6E26675 /* EventHorizonActivator.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		EC1CBB6CB41FB9BA20CAA198 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					8BA0261A54AB85E9A40D04EC = {
+						DevelopmentTeam = WFTX6CN23F;
+						ProvisioningStyle = Automatic;
+					};
+					F081B220850DD407B6C4AEAA = {
+						DevelopmentTeam = WFTX6CN23F;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = C7496B09C0C565B4440B98DF /* Build configuration list for PBXProject "EventHorizonDriverKit" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = D1C83A2C863AE93D56BA697E;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C71E02CB0BF7AA995D03CCC8 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8BA0261A54AB85E9A40D04EC /* AIC8800D80Driver */,
+				F081B220850DD407B6C4AEAA /* EventHorizonActivator */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		81EA37004330B6BD73C3DA88 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7EED0EF6209EC90A4DE6E21A /* AIC8800D80Driver.cpp in Sources */,
+				624A15BC2CD119AB90BCCFDE /* AIC8800D80Driver.iig in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D336FB47BD53D07EF6A7D108 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3D8E9CEA85C55740BD9A976B /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4709A60F264A2683D6361048 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8BA0261A54AB85E9A40D04EC /* AIC8800D80Driver */;
+			targetProxy = 2C50088F7831F8CBD46DCB46 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		464EE80BFDE18ED325ECCA1E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Activator/Activator.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = WFTX6CN23F;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Activator/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.eventhorizon.driver;
+				PRODUCT_NAME = EventHorizonActivator;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		8AA87B92C6C46947B3120FE6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = WFTX6CN23F;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A623ABFFE2E19FF278907495 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = AIC8800D80/AIC8800D80Driver.dev.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = WFTX6CN23F;
+				DRIVERKIT_DEPLOYMENT_TARGET = 20.0;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AIC8800D80/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.eventhorizon.driver.AIC8800D80;
+				PRODUCT_NAME = AIC8800D80Driver;
+				SDKROOT = driverkit;
+			};
+			name = Debug;
+		};
+		AF62CD14BD6E39E1863E833A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = AIC8800D80/AIC8800D80Driver.dev.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = WFTX6CN23F;
+				DRIVERKIT_DEPLOYMENT_TARGET = 20.0;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AIC8800D80/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.eventhorizon.driver.AIC8800D80;
+				PRODUCT_NAME = AIC8800D80Driver;
+				SDKROOT = driverkit;
+			};
+			name = Release;
+		};
+		B27881134F620B8F37100160 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Activator/Activator.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = WFTX6CN23F;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Activator/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.eventhorizon.driver;
+				PRODUCT_NAME = EventHorizonActivator;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D16511B3F2AF58097EB13072 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = WFTX6CN23F;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4F766E445039619AC328EED9 /* Build configuration list for PBXNativeTarget "AIC8800D80Driver" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A623ABFFE2E19FF278907495 /* Debug */,
+				AF62CD14BD6E39E1863E833A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7C8AB197739200ABE8D35AEA /* Build configuration list for PBXNativeTarget "EventHorizonActivator" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B27881134F620B8F37100160 /* Debug */,
+				464EE80BFDE18ED325ECCA1E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C7496B09C0C565B4440B98DF /* Build configuration list for PBXProject "EventHorizonDriverKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D16511B3F2AF58097EB13072 /* Debug */,
+				8AA87B92C6C46947B3120FE6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = EC1CBB6CB41FB9BA20CAA198 /* Project object */;
+}

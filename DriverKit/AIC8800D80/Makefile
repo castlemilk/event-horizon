@@ -2,14 +2,15 @@
 #
 # Output: DriverKit/AIC8800D80/build/AIC8800D80Driver.dext
 #
-# Loading the bundle requires:
-#   1. A Developer ID Application certificate (already configured).
-#   2. Approval via `systemextensionsctl developer on` on the target Mac.
+# Loading the bundle is gated by signing + system policy — see
+# ../MACOS-LOADING.md for the two Apple-signed tracks (A1 development /
+# A2 distribution). Override IDENTITY and ENTITLEMENTS for each.
 #
-# The driver is a skeleton — it matches the operational VID:PID of
-# the AIC8800D80 and exposes the IOUSBHostDevice. It does NOT yet
-# bind to the macOS 802.11 subsystem (requires private IO80211
-# framework headers — see IO80211Controller.h).
+# The driver runs the in-kernel LMAC bring-up (stack_start -> ClearStall the
+# halted bulk pipes -> RF/txpwr/MAC-init -> active scan, logging beacons) — the
+# recovery user-space libusb cannot do on macOS. It does NOT yet bind to the
+# macOS 802.11 subsystem / expose an enX (requires the private IO80211 family;
+# see aic8800d80-macos-driver-plan.md) — that is the next milestone.
 
 DRIVERKIT_SDK := /Applications/Xcode.app/Contents/Developer/Platforms/DriverKit.platform/Developer/SDKs/DriverKit.sdk
 DRIVERKIT_HEADERS := $(DRIVERKIT_SDK)/System/DriverKit/System/Library/Frameworks/DriverKit.framework/Headers
@@ -38,6 +39,10 @@ DEXT_BUNDLE := $(BUILD_DIR)/$(DRIVER_NAME).dext
 # Set IDENTITY to your Developer ID Application certificate common name.
 # Find it with: security find-identity -v -p codesigning /Library/Keychains/System.keychain
 IDENTITY ?= Developer ID Application: Ben Ebsworth (WFTX6CN23F)
+
+# Entitlements to embed. Base (distribution/A2) by default; override with
+# ENTITLEMENTS=AIC8800D80Driver.dev.entitlements for the A1 development track.
+ENTITLEMENTS ?= AIC8800D80Driver.entitlements
 
 .PHONY: all clean install uninstall
 
@@ -68,23 +73,26 @@ $(DEXT_BUNDLE): $(BUILD_DIR)/$(DRIVER_NAME).o $(BUILD_DIR)/$(DRIVER_NAME).h Info
 	cp $(BUILD_DIR)/$(DRIVER_NAME) $(DEXT_BUNDLE)/$(DRIVER_NAME)
 	cp Info.plist $(DEXT_BUNDLE)/Info.plist
 	codesign --force --options runtime \
-            --entitlements AIC8800D80Driver.entitlements \
+            --entitlements $(ENTITLEMENTS) \
             --sign "$(IDENTITY)" \
             $(DEXT_BUNDLE)/$(DRIVER_NAME)
 	codesign --force \
-            --entitlements AIC8800D80Driver.entitlements \
+            --entitlements $(ENTITLEMENTS) \
             --sign "$(IDENTITY)" \
             $(DEXT_BUNDLE)
 
+# There is NO CLI to load a DriverKit system extension — activation must come
+# from a signed host app calling OSSystemExtensionRequest. Build & run that:
+#   sudo systemextensionsctl developer on   # dev path; needs SIP+AMFI disabled
+#   make -C ../Activator activate
 install: $(DEXT_BUNDLE)
-	sudo cp -R $(DEXT_BUNDLE) /Library/SystemExtensions/
-	sudo systemextensionsctl developer on
-	sudo systemextensionsctl load com.eventhorizon.driver.AIC8800D80
-	systemextensionsctl list | grep -i aic || true
+	@echo "Apple-dev-signed (A1): 'systemextensionsctl developer on' (SIP stays on),"
+	@echo "then 'make -C ../Activator activate'. See ../MACOS-LOADING.md."
 
 uninstall:
-	sudo systemextensionsctl unload com.eventhorizon.driver.AIC8800D80 || true
-	sudo rm -rf /Library/SystemExtensions/$(DRIVER_NAME).dext
+	$(MAKE) -C ../Activator deactivate || true
+	systemextensionsctl uninstall WFTX6CN23F com.eventhorizon.driver.AIC8800D80 || \
+	systemextensionsctl uninstall - com.eventhorizon.driver.AIC8800D80 || true
 
 clean:
 	rm -rf $(BUILD_DIR)

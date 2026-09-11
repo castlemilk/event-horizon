@@ -4,7 +4,7 @@ build/
 bin/
 .tmp_dongle_check/
 sysroot/
-usbwifi
+/usbwifi
 *.dmg
 *.pkg
 session-*.md
