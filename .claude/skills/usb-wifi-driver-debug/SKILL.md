@@ -14,6 +14,10 @@ Read the auto-memory `event-horizon-lmac-radio` first. It carries the current
 verified state: message IDs, struct layouts, the working firmware set, and a
 list of **negative results that must not be retried**.
 
+For the bring-up-to-dish flow (replug → daemon → link → verify) see
+`docs/dongle-link-runbook.md` — the verified command sequence with
+confirm-each-step checks, plus the troubleshooting table.
+
 ## 1. The vendor driver is the source of truth — extract it
 
 The dongle ships its own Windows driver on a ZeroCD volume. Do not guess at
@@ -144,6 +148,20 @@ wrong thing before you suspect the silicon.
 
 ## 10. Method
 
+- Never enumerate USB on a request path. `libusb_init` + open + string-reads
+  per device stalls indefinitely against a half-enumerated ZeroCD dongle
+  (stale ghost node beside the fresh one), and every poller calling it at
+  once wedges all of them — which reads as "the daemon is dead". Serve
+  presence from a TTL cache filled by one background pass; a cache with no
+  completed pass must report "probing", never "absent".
+- `IsSelected` is not association. The scanner marks the last *selected* SSID
+  when nothing is connected, so a UI reading the highlight as the connection
+  shows a network the radio never joined. Trust `connectedSSID` / daemon
+  `associated` only.
+- A daemon found dead with registers / `SIGABRT` in its log died in libusb
+  `pthread_key_create` (`usbi_tls_key_create`) — seen once after ~11h uptime,
+  root cause open. Relaunch covers it; chase it if it recurs. (`grep -a`:
+  the daemon log contains NUL bytes.)
 - Instrument before theorising. `--dump` plus `protocol.SetRxDebug` (record
   boundaries) found in one run what days of reasoning missed. Note that `sudo`
   strips the environment, so wire debug switches to CLI flags, not env vars.

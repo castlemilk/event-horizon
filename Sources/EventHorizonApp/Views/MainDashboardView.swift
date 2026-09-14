@@ -14,10 +14,10 @@ public struct MainDashboardView: View {
     }
 
     private var primaryNode: HardwareTopologyNode? {
-        store.topologyNodes.first(where: { $0.bsdInterface == store.selectedInterface })
-            ?? store.topologyNodes.first(where: { $0.status.contains("Default Route") })
-            ?? store.topologyNodes.first(where: { $0.usbDriver.contains("Wi-Fi") || $0.usbDriver.contains("WLAN") })
-            ?? store.topologyNodes.first
+        if let dongleID = store.selectedDongleId {
+            return store.topologyNodes.first { HardwareTopologyNode.dongleId($0) == dongleID }
+        }
+        return store.topologyNodes.first { $0.interfaceName == store.selectedInterface }
     }
 
     private var secondaryNodes: [HardwareTopologyNode] {
@@ -66,6 +66,22 @@ public struct MainDashboardView: View {
 
                 Divider()
 
+                HStack(spacing: 8) {
+                    if store.isStartingDaemon {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: store.isDaemonConnected ? "checkmark.circle" : "exclamationmark.triangle")
+                            .foregroundStyle(store.isDaemonConnected ? .green : .orange)
+                    }
+                    Text(store.statusMessage).font(.callout).textSelection(.enabled)
+                    Spacer()
+                    if !store.isDaemonConnected && !store.isStartingDaemon {
+                        Button("Retry Connection") { Task { await store.retryDaemonConnection() } }
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         switch activeSection {
@@ -73,11 +89,12 @@ public struct MainDashboardView: View {
                             OverviewDashboardView(
                                 node: primaryNode,
                                 otherNodes: secondaryNodes,
-                                stat: store.interfaceStats.first(where: { $0.name == store.selectedInterface }) ?? store.interfaceStats.first,
+                                stat: store.selectedTelemetry,
                                 activeHotspot: store.activeHotspotForSelectedInterface,
                                 rxHistory: store.rxHistory,
                                 txHistory: store.txHistory,
                                 onSelectDevice: { device in
+                                    store.selectDeviceInterface(device.interfaceName)
                                     selectedDeviceForDetail = device
                                     activeSection = .devices
                                 },
@@ -112,8 +129,8 @@ public struct MainDashboardView: View {
                                 }
                             )
 
-                        case .starlink:
-                            StarlinkDishView(store: store)
+                        case .terminal:
+                            TerminalView(store: store)
 
                         case .spectrum:
                             RFSpectrumAnalyzerView(store: store)
@@ -123,7 +140,7 @@ public struct MainDashboardView: View {
 
                         case .metrics:
                             LiveMetricsAnalyticsView(
-                                stat: store.interfaceStats.first(where: { $0.name == store.selectedInterface }) ?? store.interfaceStats.first,
+                                stat: store.selectedTelemetry,
                                 pings: store.pingResults,
                                 hotspot: store.activeHotspotForSelectedInterface,
                                 interfaces: store.topologyNodes.map(\.bsdInterface).filter { !$0.isEmpty },
@@ -167,8 +184,9 @@ public struct MainDashboardView: View {
                 isConnecting: store.isConnecting,
                 onConnect: { passphrase in
                     Task {
-                        await store.connect(to: targetSSID, passphrase: passphrase)
-                        showConnectSheet = false
+                        if await store.connect(to: targetSSID, passphrase: passphrase) {
+                            showConnectSheet = false
+                        }
                     }
                 },
                 onDismiss: {
@@ -189,8 +207,8 @@ public struct MainDashboardView: View {
             return "Multi-dongle topology, USB bus controllers & per-device controls"
         case .wifi:
             return "In-range 802.11 Wi-Fi access points & network connections"
-        case .starlink:
-            return "Real-time celestial obstruction radar (101×101 SNR grid), satellite tracking & dish controls"
+        case .terminal:
+            return "Real-time celestial obstruction radar (101×101 SNR grid), satellite tracking & terminal controls"
         case .spectrum:
             return "2.4 GHz & 5 GHz RF channel occupancy, interference & congestion heatmaps"
         case .routing:
@@ -198,7 +216,7 @@ public struct MainDashboardView: View {
         case .metrics:
             return "Live signal strength, gateway latency RTT & bandwidth analytics"
         case .diagnostics:
-            return "Multi-stream line-rate speedtest, ICMP, DNS latency & link scoring"
+            return "Per-adapter speed tests, connectivity, DNS latency & link scoring"
         case .updates:
             return "DriverKit dext extensions, BootROM & firmware lifecycle"
         case .settings:

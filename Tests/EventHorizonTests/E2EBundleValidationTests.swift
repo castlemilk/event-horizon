@@ -43,7 +43,7 @@ final class E2EBundleValidationTests: XCTestCase {
         let store = WiFiManagerStore()
         
         XCTAssertTrue(store.topologyNodes.isEmpty, "WiFiManagerStore should not fabricate hardware nodes; they populate from the daemon")
-        XCTAssertTrue(store.isDaemonConnected, "WiFiManagerStore should default isDaemonConnected to true")
+        XCTAssertFalse(store.isDaemonConnected, "WiFiManagerStore must start disconnected: the daemon is a separate root process that may not be up, and defaulting true painted the UI green before the first poll ran")
     }
 
     func testWiFiDaemonClientMockResponses() async throws {

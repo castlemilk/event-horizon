@@ -100,6 +100,20 @@ public struct MenuBarPopoverView: View {
             .padding(.vertical, 2)
             .background(Color.secondary.opacity(0.08))
             .clipShape(Capsule())
+
+            // Restart lives in the header, not buried in the Hardware tab:
+            // the case that needs it (stale daemon serving stale state) is
+            // exactly the case where the operator is looking at THIS pill
+            // and nothing else.
+            Button {
+                Task { await store.restartDaemonService() }
+            } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Restart the privileged usbwifi daemon (picks up a rebuilt binary and clears stale link state)")
         }
     }
 

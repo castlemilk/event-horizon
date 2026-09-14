@@ -23,7 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct EventHorizonApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var store = WiFiManagerStore()
+    @State private var store = WiFiManagerStore(
+        manageDaemon: ProcessInfo.processInfo.environment["EVENT_HORIZON_OBSERVE_ONLY"] != "1"
+    )
 
     var body: some Scene {
         WindowGroup("Event Horizon", id: "dashboard") {

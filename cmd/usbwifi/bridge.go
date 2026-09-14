@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -29,6 +30,14 @@ import (
 //
 // Host en0 is deliberately untouched. We add a host route for the terminal
 // only, so normal traffic keeps its existing path.
+// bridgeLinkSSID carries the SSID the current link associated with, set
+// by runCmdLink before the bring-up runs. Package-level because runBridge
+// is the tail of the same CLI invocation — this is link-scope state, not
+// daemon state — and threading it through four call layers would buy
+// nothing. Written into the linkstate file so the daemon can report the
+// SSID of a link it cannot see over USB.
+var bridgeLinkSSID string
+
 func runBridge(ctx context.Context, s *session, vif, apIdx uint8, staMAC [6]byte,
 	myIP, mask, gw [4]byte, gwMAC [6]byte, netCh <-chan lmac.Ethernet, routes []string, linkDown *atomic.Bool) int {
 
@@ -46,7 +55,12 @@ func runBridge(ctx context.Context, s *session, vif, apIdx uint8, staMAC [6]byte
 	fmt.Printf("  BRIDGE: %s up with %v/%v via %v\n", iface.Name, ipStr(myIP), ipStr(mask), ipStr(gw))
 
 	for _, r := range routes {
-		if err := iface.AddHostRoute(r); err != nil {
+		// Ensure, not just add: a previous link that died without
+		// cleaning up leaves a route at a dead utun, and a bare add
+		// fails with "File exists" while the dish stays blackholed.
+		// EnsureHostRoute replaces it only after proving the old
+		// interface idle, and refuses to steal a live one.
+		if err := iface.EnsureHostRoute(r, 3*time.Second); err != nil {
 			fmt.Printf("  BRIDGE: route %s: %v\n", r, err)
 			return 1
 		}
@@ -202,6 +216,19 @@ func runBridge(ctx context.Context, s *session, vif, apIdx uint8, staMAC [6]byte
 	}()
 
 	reportLink(LinkUp, fmt.Sprintf("bridged on %s as %v", iface.Name, ipStr(myIP)))
+	// Record the live link for the daemon (see linkstate.go): the CLI
+	// holds the USB claim, so the daemon's own scan reads NO_DONGLE for
+	// exactly the period when the link is working. Removed on every
+	// exit path below.
+	_ = WriteLinkState(LinkStateFile{
+		SSID:      bridgeLinkSSID,
+		Iface:     iface.Name,
+		IP:        ipStr(myIP),
+		Gateway:   ipStr(gw),
+		PID:       os.Getpid(),
+		StartedAt: time.Now(),
+	})
+	defer RemoveLinkState()
 	fmt.Printf("  BRIDGE: running — point clients at %v through %s (ctrl-c to stop)\n",
 		ipStr(myIP), iface.Name)
 	tick := time.NewTicker(10 * time.Second)

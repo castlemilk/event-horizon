@@ -1,6 +1,6 @@
 import SwiftUI
 
-public struct StarlinkTelemetryView: View {
+public struct TerminalTelemetryView: View {
     let isReachable: Bool
     let pingMs: Int
     let activeSSID: String
@@ -19,7 +19,7 @@ public struct StarlinkTelemetryView: View {
                     .foregroundStyle(isReachable ? .green : .secondary)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Starlink Dish Telemetry")
+                    Text("Terminal telemetry (192.168.100.1)")
                         .font(.headline)
                     Text("Target API: 192.168.100.1:9200")
                         .font(.caption2.monospaced())

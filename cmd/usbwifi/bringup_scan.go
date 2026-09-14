@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -400,36 +401,29 @@ func runCmdBringup(ctx context.Context, args []string) int {
 	// the firmware runs its own connect-time scan, so this does not depend on
 	// the (silent) SCANU path. Open networks only for now.
 	if *connectSSID != "" {
-		creq := &lmac.ConnectReq{
-			SSID:     *connectSSID,
-			Band:     lmac.Band2G,
-			Channel:  uint8(*connectChan),
-			VifIdx:   vif,
-			AuthType: lmac.AuthOpen, // WPA2 uses open 802.11 auth, then EAPOL
-			Flags:    0,
-		}
-		if *connectBSSID != "" {
-			var b [6]byte
-			if n, _ := fmt.Sscanf(*connectBSSID, "%02x:%02x:%02x:%02x:%02x:%02x",
-				&b[0], &b[1], &b[2], &b[3], &b[4], &b[5]); n == 6 {
-				creq.BSSID = b
-				fmt.Printf("  targeting BSSID %s directly (hidden-AP path)\n", *connectBSSID)
-			} else {
-				log.Printf("bad --connect-bssid %q", *connectBSSID)
-				return 1
-			}
-		}
+		connBand := lmac.Band2G
 		if *band == "5g" {
-			creq.Band = lmac.Band5G
+			connBand = lmac.Band5G
 		}
 		wpa2 := *connectPass != ""
+		var connFlags uint32
+		var connIE []byte
 		if wpa2 {
 			// WPA2-PSK: advertise the RSN IE and mark the controlled port as
 			// host-driven. Association (status=0) completes on this alone; the
 			// 4-way handshake + MM_KEY_ADD follow to open the data path.
-			creq.Flags = lmac.ConnWPAWPA2InUse | lmac.ConnCtrlPortHost
-			creq.IE = lmac.WPA2PSKCCMPRsnIE
+			connFlags = lmac.ConnWPAWPA2InUse | lmac.ConnCtrlPortHost
+			connIE = lmac.WPA2PSKCCMPRsnIE
 			fmt.Println("  WPA2 mode: RSN IE + control-port-host flags set")
+		}
+		if *connectBSSID != "" {
+			var b [6]byte
+			if n, _ := fmt.Sscanf(*connectBSSID, "%02x:%02x:%02x:%02x:%02x:%02x",
+				&b[0], &b[1], &b[2], &b[3], &b[4], &b[5]); n != 6 {
+				log.Printf("bad --connect-bssid %q", *connectBSSID)
+				return 1
+			}
+			fmt.Printf("  targeting BSSID %s directly (hidden-AP path)\n", *connectBSSID)
 		}
 		// Scan first to populate the firmware's BSS list (the reference flow is
 		// scan -> connect; a cold connect may not find the AP). Fire-and-forget.
@@ -457,25 +451,128 @@ func runCmdBringup(ctx context.Context, args []string) int {
 		}
 
 		fmt.Printf("connecting to %q (vif=%d, channel=%d, open) ...\n", *connectSSID, vif, *connectChan)
-		// Fire-and-forget: this firmware does not reliably send the SM_CONNECT_CFM
-		// ack (just as it skips the scan-start ack), so blocking on the submitter
-		// ack would bail before the real result. Send raw and wait for the async
-		// SM_CONNECT_IND, which is the authoritative association result.
-		frame, err := creq.Encode()
-		if err != nil {
-			log.Printf("encode sm_connect_req: %v", err)
-			return 1
+		// Associate with bounded sibling-VAP fallback. A multi-VAP guest
+		// AP rotates BSSIDs: the pinned one may be withdrawn while a
+		// sibling on the same channel would accept, and failing the whole
+		// link on the first status_code=1 wastes a power cycle (the one
+		// resource software cannot mint). Each attempt is one SM_CONNECT
+		// with no reset between them — resets are the budgeted resource,
+		// associations are not — and only an explicit AP refusal retries.
+		// A silent AP (no IND in 90s) means a deaf instance: return, do
+		// not loop, the chip needs a replug.
+		type candidate struct {
+			bssid   [6]byte
+			pinned  bool // false = broadcast (first attempt, as requested)
+			channel uint8
+			why     string
 		}
-		if err := s.sess.BulkOut(ctx, lmac.WrapCommand(frame)); err != nil {
-			log.Printf("send sm_connect_req: %v", err)
-			return 1
+		var firstBSSID [6]byte
+		firstPinned := false
+		if *connectBSSID != "" {
+			fmt.Sscanf(*connectBSSID, "%02x:%02x:%02x:%02x:%02x:%02x",
+				&firstBSSID[0], &firstBSSID[1], &firstBSSID[2], &firstBSSID[3], &firstBSSID[4], &firstBSSID[5])
+			firstPinned = true
 		}
-		fmt.Println("  SM_CONNECT_REQ sent; waiting up to 90s for SM_CONNECT_IND ...")
-		deadline := time.After(90 * time.Second)
-		// Passive wait, matching the vendor driver (which sends SM_CONNECT,
+		queue := []candidate{{bssid: firstBSSID, pinned: firstPinned, channel: uint8(*connectChan), why: "as requested"}}
+		tried := map[[6]byte]bool{}
+		if firstPinned {
+			tried[firstBSSID] = true
+		}
+		fallbackScanned := false
+		// siblingCandidates runs one broad scan on this session and
+		// returns same-SSID (or, for hidden nets, same-channel) BSSIDs
+		// strongest-first, excluding tried ones, capped at two. It runs
+		// at most once: re-issuing scan_start restarts the scan and it
+		// never completes. When *prescan already populated results, those
+		// are reused and no scan is sent at all.
+		siblingCandidates := func() []candidate {
+			if !fallbackScanned {
+				fallbackScanned = true
+				if len(results) == 0 {
+					sreq := &lmac.ScanStartReq{Band: connBand, BSSID: lmac.BroadcastBSSID, VifIdx: vif, Duration: 120}
+					if *connectChan != 0 {
+						sreq.Channels = []lmac.ChannelInfo{{Prim20Ch: uint8(*connectChan), Center1: uint8(*connectChan), Width: lmac.ChanWidth20}}
+					} else {
+						for _, ch := range []uint8{1, 6, 11} {
+							sreq.Channels = append(sreq.Channels, lmac.ChannelInfo{Prim20Ch: ch, Center1: ch, Width: lmac.ChanWidth20})
+						}
+					}
+					if sf, err := sreq.Encode(); err == nil {
+						_ = s.sess.BulkOut(ctx, lmac.WrapCommand(sf))
+						fmt.Println("  refusal fallback: broad scan issued; collecting 10s...")
+						time.Sleep(10 * time.Second)
+					}
+				}
+			}
+			type scored struct {
+				c candidate
+				r int32
+			}
+			var out []scored
+			mu.Lock()
+			for _, r := range results {
+				if tried[r.BSSID] {
+					continue
+				}
+				if r.SSID != "" && r.SSID != *connectSSID {
+					continue // named network that is not ours
+				}
+				if *connectChan != 0 && int(r.Channel) != *connectChan {
+					continue // pinned channel: stay on it
+				}
+				why := "same-SSID sibling"
+				if r.SSID == "" {
+					why = fmt.Sprintf("hidden BSSID on ch=%d", r.Channel)
+				}
+				out = append(out, scored{c: candidate{r.BSSID, true, uint8(r.Channel), why}, r: int32(r.RSSI)})
+			}
+			mu.Unlock()
+			sort.Slice(out, func(i, j int) bool { return out[i].r > out[j].r })
+			var cands []candidate
+			for i := 0; i < len(out) && i < 2; i++ {
+				cands = append(cands, out[i].c)
+				tried[out[i].c.bssid] = true
+			}
+			return cands
+		}
+
+		for len(queue) > 0 {
+			cand := queue[0]
+			queue = queue[1:]
+			creq := &lmac.ConnectReq{
+				SSID:     *connectSSID,
+				Band:     connBand,
+				Channel:  cand.channel,
+				VifIdx:   vif,
+				AuthType: lmac.AuthOpen, // WPA2 uses open 802.11 auth, then EAPOL
+				Flags:    connFlags,
+				IE:       connIE,
+			}
+			if cand.pinned {
+				creq.BSSID = cand.bssid
+			}
+			fmt.Printf("  attempt (%s) bssid=%02x:%02x:%02x:%02x:%02x:%02x ch=%d ...\n", cand.why,
+				cand.bssid[0], cand.bssid[1], cand.bssid[2], cand.bssid[3], cand.bssid[4], cand.bssid[5], cand.channel)
+			// Fire-and-forget: this firmware does not reliably send the
+			// SM_CONNECT_CFM ack (just as it skips the scan-start ack), so
+			// blocking on the submitter ack would bail before the real
+			// result. Send raw and wait for the async SM_CONNECT_IND,
+			// which is the authoritative association result.
+			frame, err := creq.Encode()
+			if err != nil {
+				log.Printf("encode sm_connect_req: %v", err)
+				return 1
+			}
+			if err := s.sess.BulkOut(ctx, lmac.WrapCommand(frame)); err != nil {
+				log.Printf("send sm_connect_req: %v", err)
+				return 1
+			}
+			fmt.Println("  SM_CONNECT_REQ sent; waiting up to 90s for SM_CONNECT_IND ...")
+			deadline := time.After(90 * time.Second)
 		// waits for the CFM, and takes the IND async without polling). A
 		// 4s GetMacAddr flush-poll was tried and never surfaced the IND, so
 		// it is removed — the poll traffic may disturb the association.
+	Attempt:
 		for {
 			select {
 			case st := <-connCfmCh:
@@ -526,13 +623,31 @@ func runCmdBringup(ctx context.Context, args []string) int {
 					return 0
 				}
 				fmt.Printf("association FAILED: status_code=%d\n", ind.StatusCode)
-				return 1
+				// Explicit refusal (not silence): the AP said no to this
+				// BSSID. Try siblings before giving up — but only from
+				// this attempt's failure, and only once per BSSID.
+				more := siblingCandidates()
+				if len(more) == 0 {
+					fmt.Println("  no untried sibling VAPs; giving up (a replug is next, not more retries)")
+					return 1
+				}
+				for _, m := range more {
+					fmt.Printf("  queued fallback: %s\n", m.why)
+					queue = append(queue, m)
+				}
+				continue Attempt // next candidate
 			case <-deadline:
 				fmt.Println("no SM_CONNECT_IND within 90s — association did not complete")
 				return 1
 			}
 		}
+		// Reaching here means every candidate was explicitly refused.
+		// (Success returns from inside the loop; silence returns too.)
+		fmt.Println("all association candidates refused; giving up")
+		return 1
 	}
+}
+
 
 	// Parse channel list.
 	b := lmac.Band2G

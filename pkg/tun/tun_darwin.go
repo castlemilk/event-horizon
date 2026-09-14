@@ -53,7 +53,9 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 )
 
@@ -102,21 +104,126 @@ func (t *Interface) ConfigureIP(ip, netmask, gateway string) error {
 	return nil
 }
 
-// AddHostRoute points a single destination at this interface, leaving every
-// other route — and therefore the host's own en0 traffic — alone.
-func (t *Interface) AddHostRoute(dst string) error {
-	log.Printf("[TUN] Routing %s via %s...", dst, t.Name)
-	cmd := exec.Command("route", "-n", "add", "-host", dst, "-interface", t.Name)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
+// EnsureHostRoute points dst at this interface, replacing a STALE route
+// when one is in the way.
+//
+// `route add` fails with "File exists" when a previous link died without
+// cleaning up (unclean daemon death, killed CLI) — and the leftover points
+// at a dead utun, blackholing the dish while everything reports healthy.
+// Blindly deleting is worse: the route might belong to a LIVE link owned
+// by another process. So replacement is conditional:
+//
+//  1. No existing route, or route already points here → add (or no-op).
+//  2. Route points elsewhere and the interface is not a utun → refuse.
+//     Only utun routes are ever ours to touch; en0 etc. are the host's.
+//  3. Route points at another utun → check it is idle (packet counters
+//     frozen over a short window). Idle means its owner is dead; delete
+//     and add ours. Active means someone's link is alive; refuse rather
+//     than steal it.
+//
+// runCmdFns are package vars so tests can stub the OS without root.
+var runCmdFn = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
+
+// EnsureHostRoute implements the policy above. A nil idleWait disables
+// the traffic check (tests); production passes ~3s.
+func (t *Interface) EnsureHostRoute(dst string, idleWait time.Duration) error {
+	cur, err := routeIfaceFor(dst)
+	if err == nil && cur == t.Name {
+		return nil // already ours
+	}
+	if err == nil && cur != "" && !isUtun(cur) {
+		return fmt.Errorf("refusing to steal %s from non-utun interface %s", dst, cur)
+	}
+	if err == nil && cur != "" && isUtun(cur) && cur != t.Name {
+		idle, cerr := utunIdle(cur, idleWait)
+		if cerr != nil {
+			return fmt.Errorf("cannot verify %s is idle, leaving route alone: %w", cur, cerr)
+		}
+		if !idle {
+			return fmt.Errorf("route for %s belongs to live interface %s; refusing to steal it", dst, cur)
+		}
+		if out, derr := runCmdFn("route", "-n", "delete", "-host", dst); derr != nil {
+			return fmt.Errorf("route delete -host %s: %w: %s", dst, derr, strings.TrimSpace(string(out)))
+		}
+		log.Printf("[TUN] removed stale route %s -> %s", dst, cur)
+	}
+	if out, aerr := runCmdFn("route", "-n", "add", "-host", dst, "-interface", t.Name); aerr != nil {
 		return fmt.Errorf("route add -host %s -interface %s: %w: %s",
-			dst, t.Name, err, strings.TrimSpace(string(output)))
+			dst, t.Name, aerr, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
+// routeIfaceFor reports which interface the kernel would use for dst.
+func routeIfaceFor(dst string) (string, error) {
+	out, err := runCmdFn("route", "-n", "get", dst)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if i := strings.Index(line, "interface:"); i >= 0 {
+			return strings.TrimSpace(line[i+len("interface:"):]), nil
+		}
+	}
+	return "", fmt.Errorf("no interface line in route get %s", dst)
+}
+
+func isUtun(iface string) bool { return strings.HasPrefix(iface, "utun") }
+
+// utunIdle reports whether an interface's packet counters are frozen.
+// Two samples of `netstat -ibn` idleWait apart; equal counters = idle.
+// A zero wait skips the second sample and reports idle (tests only —
+// production always waits, because a single sample proves nothing).
+func utunIdle(iface string, idleWait time.Duration) (bool, error) {
+	before, err := utunCounters(iface)
+	if err != nil {
+		return false, err
+	}
+	if idleWait <= 0 {
+		return true, nil
+	}
+	time.Sleep(idleWait)
+	after, err := utunCounters(iface)
+	if err != nil {
+		return false, err
+	}
+	return before == after, nil
+}
+
+type utunCount struct{ in, out uint64 }
+
+func utunCounters(iface string) (utunCount, error) {
+	out, err := runCmdFn("netstat", "-ibn")
+	if err != nil {
+		return utunCount{}, err
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) == 0 || f[0] != iface || len(f) < 7 {
+			continue
+		}
+		// Right-anchored: the middle columns vary (a <Link#N> row has
+		// 10 fields, an address row 12 with "-" placeholders), but the
+		// trailing counters are stable: ...Ipkts Ierrs Ibytes Opkts
+		// Oerrs Obytes Coll. A row with a placeholder in a counter slot
+		// is skipped in favour of the interface's other row form.
+		n := len(f)
+		ipkts, err1 := strconv.ParseUint(f[n-6], 10, 64)
+		ibytes, err2 := strconv.ParseUint(f[n-4], 10, 64)
+		opkts, err3 := strconv.ParseUint(f[n-3], 10, 64)
+		obytes, err4 := strconv.ParseUint(f[n-2], 10, 64)
+		if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+			continue
+		}
+		return utunCount{ipkts + ibytes, opkts + obytes}, nil
+	}
+	return utunCount{}, fmt.Errorf("interface %s not in netstat output", iface)
+}
+
 // AddStarlinkRoute routes the dish's telemetry address through this interface.
-func (t *Interface) AddStarlinkRoute() error { return t.AddHostRoute("192.168.100.1") }
+func (t *Interface) AddStarlinkRoute() error { return t.EnsureHostRoute("192.168.100.1", 0) }
 
 func (t *Interface) Close() {
 	if t.File != nil {

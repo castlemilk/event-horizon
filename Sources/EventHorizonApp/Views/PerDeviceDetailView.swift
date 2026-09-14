@@ -8,21 +8,9 @@ public struct PerDeviceDetailView: View {
     let pings: [PingResult]
     let onBack: () -> Void
     let onSelectHotspot: (String) -> Void
-
     @State private var selectedTab = 0
-    @State private var isRunningPingTest = false
-    @State private var isRunningSpeedTest = false
-    @State private var pingResultText = ""
-    @State private var speedTestResultText = ""
 
-    public init(
-        node: HardwareTopologyNode,
-        hotspots: [AccessPoint],
-        stat: InterfaceStat?,
-        pings: [PingResult],
-        onBack: @escaping () -> Void,
-        onSelectHotspot: @escaping (String) -> Void
-    ) {
+    public init(node: HardwareTopologyNode, hotspots: [AccessPoint], stat: InterfaceStat?, pings: [PingResult], onBack: @escaping () -> Void, onSelectHotspot: @escaping (String) -> Void) {
         self.node = node
         self.hotspots = hotspots
         self.stat = stat
@@ -31,245 +19,80 @@ public struct PerDeviceDetailView: View {
         self.onSelectHotspot = onSelectHotspot
     }
 
-    private var isWiFiDevice: Bool {
-        node.usbDriver.localizedCaseInsensitiveContains("Wi-Fi") || node.usbDriver.localizedCaseInsensitiveContains("WLAN") || node.usbDriver.localizedCaseInsensitiveContains("Broadcom")
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Button("All Devices", systemImage: "chevron.left", action: onBack)
+                Spacer()
+                Label(node.routeBadge, systemImage: node.isConnected ? "checkmark.circle" : "info.circle")
+                    .foregroundStyle(node.isConnected ? .green : .secondary)
+            }
+            HStack(spacing: 16) {
+                Image(systemName: node.category.systemIconName).font(.largeTitle).foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(node.usbDriver).font(.title2.bold())
+                    Text(node.status).foregroundStyle(.secondary)
+                    Text("Interface: \(node.interfaceName.isEmpty ? "Unavailable" : node.interfaceName) · IP: \(node.ipAddress.isEmpty ? "Unassigned" : node.ipAddress)")
+                        .font(.caption.monospaced())
+                }
+            }
+            Picker("Device details", selection: $selectedTab) {
+                Text("Telemetry").tag(0)
+                Text("Diagnostics").tag(1)
+                Text("Hardware").tag(2)
+            }.pickerStyle(.segmented)
+            switch selectedTab {
+            case 0: DeviceTelemetryView(node: node, stat: stat)
+            case 1: DeviceDiagnosticsView(node: node, stat: stat)
+            default: DeviceHardwareDetailsView(node: node)
+            }
+        }
+        .padding(20)
+        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+struct DeviceHardwareDetailsView: View {
+    let node: HardwareTopologyNode
+    var body: some View {
+        VStack(spacing: 8) {
+            DetailGridRow(label: "Network", value: node.isConnected && !node.networkTarget.isEmpty ? node.networkTarget : "Not connected / unavailable")
+            DetailGridRow(label: "Vendor / Product", value: "\(node.vendorId) / \(node.productId)")
+            DetailGridRow(label: "Serial number", value: node.serialNumber.isEmpty ? "Not reported" : node.serialNumber)
+            DetailGridRow(label: "USB bus path", value: node.busPath ?? "Not reported")
+            DetailGridRow(label: "Bus speed", value: node.speed.isEmpty ? "Not reported" : node.speed)
+            DetailGridRow(label: "Interface", value: node.interfaceName.isEmpty ? "Unavailable" : node.interfaceName)
+            DetailGridRow(label: "IP address", value: node.ipAddress.isEmpty ? "Unassigned" : node.ipAddress)
+            DetailGridRow(label: "Subnet", value: node.subnetMask.isEmpty ? "Not reported" : node.subnetMask)
+            DetailGridRow(label: "Gateway", value: node.gateway.isEmpty ? "Not reported" : node.gateway)
+            DetailGridRow(label: "MAC address", value: node.macAddress.isEmpty ? "Not reported" : node.macAddress)
+            DetailGridRow(label: "Driver", value: node.driverType.isEmpty ? "Not reported" : node.driverType)
+        }
+        .textSelection(.enabled)
+    }
+}
+
+// DetailGridRow is the label/value row the hardware-details grid is built
+// from. Was removed mid-edit while its usages stayed; restoring it.
+public struct DetailGridRow: View {
+    let label: String
+    let value: String
+
+    public init(label: String, value: String) {
+        self.label = label
+        self.value = value
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            // Header Bar & Back Button
-            HStack {
-                Button(action: onBack) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("All Devices")
-                    }
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.blue)
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(node.status.contains("Connected") || node.status.contains("Active") ? Color.green : Color.orange)
-                        .frame(width: 8, height: 8)
-                    Text(node.status)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(node.status.contains("Connected") || node.status.contains("Active") ? .green : .orange)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.12))
-                .clipShape(Capsule())
-            }
-
-            // Hero Header for Selected Device
-            HStack(spacing: 16) {
-                DeviceGraphicView(deviceDriver: node.usbDriver)
-                    .frame(width: 80, height: 80)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(node.usbDriver)
-                        .font(.title2.weight(.bold))
-
-                    HStack(spacing: 8) {
-                        Text(node.bsdInterface)
-                            .font(.caption.monospaced().weight(.bold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.15))
-                            .foregroundStyle(.blue)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-
-                        Text("IP: \(node.ipAddress)")
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-
-                        Text("MAC: \(node.macAddress)")
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            Divider()
-
-            // Tab Picker
-            Picker("", selection: $selectedTab) {
-                if isWiFiDevice {
-                    Text("📡 Wi-Fi Hotspots").tag(0)
-                }
-                Text("📊 Telemetry").tag(1)
-                Text("🧪 Diagnostics").tag(2)
-                Text("📋 Metadata").tag(3)
-            }
-            .pickerStyle(.segmented)
-
-            // Tab Content
-            switch selectedTab {
-            case 0:
-                // Wi-Fi Hotspots View
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("In-Range Networks for \(node.bsdInterface)")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
-
-                    VStack(spacing: 8) {
-                        ForEach(hotspots) { ap in
-                            HStack {
-                                Image(systemName: "wifi")
-                                    .foregroundStyle(ap.isSelected ? .green : .secondary)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    HStack(spacing: 6) {
-                                        Text(ap.ssid)
-                                            .font(.body.weight(.medium))
-                                        if ap.isSelected {
-                                            Text("ACTIVE")
-                                                .font(.system(size: 8, weight: .bold))
-                                                .padding(.horizontal, 4)
-                                                .padding(.vertical, 1)
-                                                .background(Color.green.opacity(0.15))
-                                                .foregroundStyle(.green)
-                                                .clipShape(Capsule())
-                                        }
-                                    }
-                                    Text("\(ap.security) • Channel \(ap.channel)")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                Spacer()
-
-                                Button(ap.isSelected ? "Connected" : "Connect") {
-                                    onSelectHotspot(ap.ssid)
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(ap.isSelected)
-                            }
-                            .padding(12)
-                            .background(Color(nsColor: .controlBackgroundColor))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                    }
-                }
-
-            case 1:
-                // Telemetry View
-                if let s = stat {
-                    VStack(alignment: .leading, spacing: 14) {
-                        LiveThroughputChartView(
-                            rxData: [s.rxRateKBps],
-                            txData: [s.txRateKBps]
-                        )
-
-                        HStack(spacing: 12) {
-                            SubMetricTile(label: "Download Rate", value: "\(Int(s.rxRateKBps)) KB/s", icon: "arrow.down.circle.fill", color: .green)
-                            SubMetricTile(label: "Upload Rate", value: "\(Int(s.txRateKBps)) KB/s", icon: "arrow.up.circle.fill", color: .blue)
-                            SubMetricTile(label: "Packets In/Out", value: "\(s.packetsIn) / \(s.packetsOut)", icon: "shippingbox.fill", color: .purple)
-                        }
-                    }
-                }
-
-            case 2:
-                // Diagnostics View
-                let ifaceName = node.bsdInterface.components(separatedBy: " ").first ?? "en0"
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
-                        Button("Run Connectivity Ping Test (\(ifaceName))") {
-                            isRunningPingTest = true
-                            pingResultText = "Testing ping on interface \(ifaceName)..."
-                            Task {
-                                do {
-                                    guard let url = URL(string: "http://127.0.0.1:8990/api/diagnostics/ping?interface=\(ifaceName)") else { return }
-                                    let (data, _) = try await URLSession.shared.data(from: url)
-                                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                                       let list = json["data"] as? [[String: Any]],
-                                       let first = list.first {
-                                        let rtt = first["rtt_ms"] as? Int
-                                        let target = first["target"] as? String ?? "1.1.1.1"
-                                        if let rtt {
-                                            pingResultText = "Interface \(ifaceName) -> Target \(target) Reachable • RTT: \(rtt) ms • Loss: 0%"
-                                        } else {
-                                            pingResultText = "Interface \(ifaceName) -> Target \(target) Reachable (RTT unavailable)"
-                                        }
-                                    }
-                                } catch {
-                                    pingResultText = "Interface \(ifaceName) -> Ping failed: \(error.localizedDescription)"
-                                }
-                                isRunningPingTest = false
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isRunningPingTest)
-
-                        Button("Run Speed Test (\(ifaceName))") {
-                            isRunningSpeedTest = true
-                            speedTestResultText = "Running HTTP speed test over \(ifaceName)..."
-                            Task {
-                                do {
-                                    guard let url = URL(string: "http://127.0.0.1:8990/api/diagnostics/speedtest?interface=\(ifaceName)") else { return }
-                                    let (data, _) = try await URLSession.shared.data(from: url)
-                                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                                       let dict = json["data"] as? [String: Any] {
-                                        if let rx = dict["download_mbps"] as? Double, let tx = dict["upload_mbps"] as? Double {
-                                            speedTestResultText = String(format: "Bound to %@ -> Download: %.1f Mbps • Upload: %.1f Mbps", ifaceName, rx, tx)
-                                        } else {
-                                            speedTestResultText = "Speed test completed on \(ifaceName) (results unavailable)"
-                                        }
-                                    }
-                                } catch {
-                                    speedTestResultText = String(format: "Speed test failed on %@: %@", ifaceName, error.localizedDescription)
-                                }
-                                isRunningSpeedTest = false
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isRunningSpeedTest)
-                    }
-
-                    if !pingResultText.isEmpty {
-                        Text(pingResultText)
-                            .font(.callout.monospaced())
-                            .padding(10)
-                            .background(Color.secondary.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-
-                    if !speedTestResultText.isEmpty {
-                        Text(speedTestResultText)
-                            .font(.callout.monospaced().weight(.bold))
-                            .foregroundStyle(.green)
-                            .padding(10)
-                            .background(Color.green.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                }
-
-            default:
-                // Full Metadata View
-                VStack(spacing: 6) {
-                    DetailGridRow(label: "Vendor ID / Product ID", value: "\(node.vendorId) / \(node.productId)")
-                    DetailGridRow(label: "Serial Number", value: node.serialNumber)
-                    DetailGridRow(label: "Bus Connection Speed", value: node.speed)
-                    DetailGridRow(label: "BSD Interface", value: node.bsdInterface)
-                    DetailGridRow(label: "Assigned IP Address", value: node.ipAddress)
-                    DetailGridRow(label: "Subnet Mask", value: node.subnetMask)
-                    DetailGridRow(label: "Default Gateway", value: node.gateway)
-                    DetailGridRow(label: "Hardware Driver Type", value: node.driverType)
-                }
-                .padding(14)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Spacer()
+            Text(value)
+                .font(.caption.monospaced())
+                .multilineTextAlignment(.trailing)
         }
-        .padding(20)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 
