@@ -1,7 +1,7 @@
 import SwiftUI
 import EventHorizonCore
 
-public struct StarlinkDishView: View {
+public struct TerminalView: View {
     @Bindable var store: WiFiManagerStore
     @State private var isStowing = false
     @State private var isRebooting = false
@@ -33,7 +33,7 @@ public struct StarlinkDishView: View {
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 8) {
-                            Text("Starlink Celestial Telemetry & Radar")
+                            Text("Terminal Celestial Telemetry & Radar")
                                 .font(.title2.weight(.bold))
                             Text("ONLINE")
                                 .font(.system(size: 9, weight: .bold))
@@ -159,7 +159,7 @@ public struct StarlinkDishView: View {
                         ConstellationRow(label: "Boresight Elevation", value: "68.2°", isGood: true)
                         ConstellationRow(label: "Ping Latency (Gateway)", value: "28 ms", isGood: true)
                         ConstellationRow(label: "Ping Drop Rate", value: "0.0 %", isGood: true)
-                        ConstellationRow(label: "Active Satellites in View", value: "14 Starlink V2 Mini", isGood: true)
+                        ConstellationRow(label: "Active Satellites in View", value: "14 V2 Mini", isGood: true)
                         ConstellationRow(label: "Obstruction Duration", value: "0 sec (Past 12h)", isGood: true)
                     }
                     .padding(12)
@@ -179,7 +179,7 @@ public struct StarlinkDishView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Are you sure you want to execute \(dialogAction.rawValue) on the Starlink terminal?")
+            Text("Are you sure you want to execute \(dialogAction.rawValue) on the terminal?")
         }
     }
 }

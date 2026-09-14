@@ -1,11 +1,14 @@
 package usb
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/castlemilk/event-horizon/pkg/driver"
 )
@@ -16,6 +19,7 @@ type HardwareTopology struct {
 	ProductID     string `json:"product_id"`
 	SerialNumber  string `json:"serial_number"`
 	Speed         string `json:"speed"`
+	BusPath       string `json:"bus_path,omitempty"`
 	BSDInterface  string `json:"bsd_interface"`
 	NetworkTarget string `json:"network_target"`
 	IPAddress     string `json:"ip_address"`
@@ -39,7 +43,7 @@ type hardwarePort struct {
 // interfaces to their real hardware port names and types.
 func enumerateHardwarePorts() map[string]hardwarePort {
 	ports := make(map[string]hardwarePort)
-	out, err := exec.Command("networksetup", "-listallhardwareports").Output()
+	out, err := topologyCommand("networksetup", "-listallhardwareports")
 	if err != nil {
 		return ports
 	}
@@ -51,14 +55,18 @@ func enumerateHardwarePorts() map[string]hardwarePort {
 		case strings.HasPrefix(line, "Hardware Port:"):
 			name := strings.TrimSpace(strings.TrimPrefix(line, "Hardware Port:"))
 			current = &hardwarePort{Name: name, IsWiFi: strings.Contains(name, "Wi-Fi")}
-			if strings.Contains(name, "USB") && strings.Contains(name, "LAN") {
+			if strings.Contains(name, "USB") {
 				current.IsUSB = true
 			}
 		case strings.HasPrefix(line, "Device:") && current != nil:
 			dev := strings.TrimSpace(strings.TrimPrefix(line, "Device:"))
+			current.Device = dev
 			ports[dev] = *current
 		case strings.HasPrefix(line, "Ethernet Address:") && current != nil:
 			current.MAC = strings.TrimSpace(strings.TrimPrefix(line, "Ethernet Address:"))
+			if current.Device != "" {
+				ports[current.Device] = *current
+			}
 		case line == "":
 			current = nil
 		}
@@ -70,7 +78,7 @@ func enumerateHardwarePorts() map[string]hardwarePort {
 // table (default routes only).
 func defaultGateways() map[string]string {
 	routes := make(map[string]string)
-	out, err := exec.Command("netstat", "-rn", "-f", "inet").Output()
+	out, err := topologyCommand("netstat", "-rn", "-f", "inet")
 	if err != nil {
 		return routes
 	}
@@ -100,7 +108,7 @@ func ifaceIPv4(iface net.Interface) (ip, mask string) {
 		}
 		ones, bits := ipNet.Mask.Size()
 		if ones > 0 && bits == 32 {
-			return ipNet.IP.String(), net.CIDRMask(ones, 32).String()
+			return ipNet.IP.String(), net.IP(net.CIDRMask(ones, 32)).String()
 		}
 	}
 	return "", ""
@@ -109,7 +117,7 @@ func ifaceIPv4(iface net.Interface) (ip, mask string) {
 // wifiSSID returns the SSID the given interface is associated with, or "".
 func wifiSSID(iface string) string {
 	// 1. Try ipconfig getsummary
-	out, err := exec.Command("ipconfig", "getsummary", iface).Output()
+	out, err := topologyCommand("ipconfig", "getsummary", iface)
 	if err == nil {
 		for _, line := range strings.Split(string(out), "\n") {
 			line = strings.TrimSpace(line)
@@ -123,7 +131,7 @@ func wifiSSID(iface string) string {
 	}
 
 	// 2. Try networksetup -getairportnetwork
-	out, err = exec.Command("networksetup", "-getairportnetwork", iface).Output()
+	out, err = topologyCommand("networksetup", "-getairportnetwork", iface)
 	if err == nil {
 		raw := strings.TrimSpace(string(out))
 		const prefix = "Current Wi-Fi Network: "
@@ -132,18 +140,6 @@ func wifiSSID(iface string) string {
 			if val != "" && val != "<redacted>" && val != "<hidden>" {
 				return val
 			}
-		}
-	}
-
-	// 3. Fallback: Query preferred networks list from macOS
-	prefOut, prefErr := exec.Command("networksetup", "-listpreferredwirelessnetworks", iface).Output()
-	if prefErr == nil {
-		for _, l := range strings.Split(string(prefOut), "\n") {
-			candidate := strings.TrimSpace(l)
-			if candidate == "" || strings.HasPrefix(candidate, "Preferred networks") {
-				continue
-			}
-			return candidate
 		}
 	}
 
@@ -161,17 +157,20 @@ func skipInterface(name string) bool {
 
 var (
 	dongleConnectedSSID string
-	dongleIP            = "192.168.100.2"
-	dongleGateway       = "192.168.100.1"
+	dongleConnectedMu   sync.RWMutex
 )
 
 // SetDongleConnected updates the topology node for the active USB dongle connection.
 func SetDongleConnected(ssid string) {
+	dongleConnectedMu.Lock()
+	defer dongleConnectedMu.Unlock()
 	dongleConnectedSSID = ssid
 }
 
 // GetDongleConnected returns the currently connected SSID for the dongle.
 func GetDongleConnected() string {
+	dongleConnectedMu.RLock()
+	defer dongleConnectedMu.RUnlock()
 	return dongleConnectedSSID
 }
 
@@ -198,6 +197,8 @@ func GetHardwareTopology() []HardwareTopology {
 			_, hasDefaultRoute := gateways[name]
 			status := "Down"
 			switch {
+			case iface.Flags&net.FlagUp == 0:
+				status = "Down"
 			case hasDefaultRoute && ip != "":
 				status = "Active (Default Route)"
 			case ip != "":
@@ -217,9 +218,15 @@ func GetHardwareTopology() []HardwareTopology {
 			}
 
 			if isWiFi {
-				node.NetworkTarget = wifiSSID(name)
-				node.DriverType = "Apple Built-in Wi-Fi"
-				node.USBDriver = "Built-in Wi-Fi (" + port.Name + ")"
+				if iface.Flags&net.FlagUp != 0 {
+					node.NetworkTarget = wifiSSID(name)
+				}
+				if port.IsUSB {
+					node.DriverType = "USB Wi-Fi (macOS network interface)"
+				} else {
+					node.DriverType = "Apple Built-in Wi-Fi"
+					node.USBDriver = "Built-in Wi-Fi (" + port.Name + ")"
+				}
 			} else if port.IsUSB {
 				node.DriverType = "USB Ethernet (DriverKit)"
 			} else {
@@ -230,70 +237,36 @@ func GetHardwareTopology() []HardwareTopology {
 	}
 
 	// USB Wi-Fi dongles discovered on the live bus (the product device).
-	for _, d := range ListWiFiDongles() {
-		status := "WLAN Operational (Stage 2 - Ready)"
+	//
+	// Served from the shared TTL cache, not a fresh enumeration: this runs
+	// on the topology poll path and a synchronous libusb pass has wedged
+	// API responses against a half-enumerated ZeroCD dongle. A cold cache
+	// simply contributes no dongle nodes until its first pass lands.
+	for _, d := range cachedDonglesForTopology() {
+		status := "Present — No verified network connection"
 		driverName := "USB Wi-Fi Dongle (libusb)"
 		productName := d.Name
-		netTarget := ""
-		ip := ""
-		gw := ""
-		bsdIface := ""
-
 		if drv, devID, matched := driver.GetRegistry().FindDriverForDevice(d.VendorID, d.ProductID); matched {
 			if devID.ProductName != "" {
 				productName = devID.ProductName
 			}
 			driverName = fmt.Sprintf("%s (%s)", drv.Info().Family, drv.Info().Standard)
 		}
-
-		utunName := getActiveUtunInterface()
 		if d.IsStorage {
 			status = "Storage (ZeroCD) — ModeSwitch Required"
 			driverName = "USB Wi-Fi Dongle (ZeroCD Storage)"
-		} else if d.ProductID == ProductAicWlan {
-			bsdIface = utunName
-			ip = dongleIP
-			gw = dongleGateway
-			instProg := driver.GetInstaller().GetProgress()
-			if dongleConnectedSSID != "" {
-				status = fmt.Sprintf("Connected to '%s' (WLAN Operational)", dongleConnectedSSID)
-				netTarget = dongleConnectedSSID
-			} else if instProg.IsSuccess {
-				status = "Operational (Stage 2) — Firmware Staged"
-				netTarget = fmt.Sprintf("%s Virtual Bridge", utunName)
-			} else {
-				status = "BootROM (Stage 1) — Ready to Flash Firmware"
-				netTarget = "Awaiting Uplink"
-			}
-		} else if d.ProductID == ProductAicOperational {
-			bsdIface = utunName
-			ip = dongleIP
-			gw = dongleGateway
-			if dongleConnectedSSID != "" {
-				status = fmt.Sprintf("Connected to '%s' (WLAN Operational)", dongleConnectedSSID)
-				netTarget = dongleConnectedSSID
-			} else {
-				status = fmt.Sprintf("Connected (%s Active)", utunName)
-				netTarget = "Starlink"
-			}
 		}
-
-		mac := "a6:9c:88:00:d8:80"
-		if len(d.Serial) >= 8 {
-			mac = fmt.Sprintf("%s:%s:%s:%s:d8:80", d.Serial[0:2], d.Serial[2:4], d.Serial[4:6], d.Serial[6:8])
-		}
+		// USB descriptors prove presence, not association. Firmware product IDs,
+		// saved SSIDs and installation progress cannot identify a live bridge.
 		nodes = append(nodes, HardwareTopology{
-			USBDriver:     productName,
-			VendorID:      fmt.Sprintf("0x%04x", d.VendorID),
-			ProductID:     fmt.Sprintf("0x%04x", d.ProductID),
-			SerialNumber:  d.Serial,
-			BSDInterface:  bsdIface,
-			NetworkTarget: netTarget,
-			IPAddress:     ip,
-			Gateway:       gw,
-			MACAddress:    mac,
-			Status:        status,
-			DriverType:    driverName,
+			USBDriver:    productName,
+			VendorID:     fmt.Sprintf("0x%04x", d.VendorID),
+			ProductID:    fmt.Sprintf("0x%04x", d.ProductID),
+			SerialNumber: d.Serial,
+			Speed:        d.Speed,
+			BusPath:      d.BusPath,
+			Status:       status,
+			DriverType:   driverName,
 		})
 	}
 
@@ -310,16 +283,10 @@ func GetHardwareTopology() []HardwareTopology {
 	return nodes
 }
 
-func getActiveUtunInterface() string {
-	out, err := exec.Command("ifconfig", "-l").Output()
-	if err == nil {
-		for _, name := range strings.Fields(string(out)) {
-			if strings.HasPrefix(name, "utun") {
-				if info, ierr := exec.Command("ifconfig", name).Output(); ierr == nil && strings.Contains(string(info), "192.168.100.") {
-					return name
-				}
-			}
-		}
-	}
-	return "utun5"
+// Bound system utilities too: a slow hardware query must not indefinitely hold
+// the topology request open while the application is starting or a device leaves.
+func topologyCommand(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output()
 }

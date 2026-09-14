@@ -20,7 +20,7 @@ let supervisorLog = SupervisorLog()
 /// stayed unknowable from outside the process. A plain file always works, and
 /// startup diagnostics are exactly what someone needs when the app looks alive
 /// and does nothing.
-public struct SupervisorLog {
+public struct SupervisorLog: Sendable {
     private let logger = Logger(subsystem: "com.castlemilk.eventhorizon", category: "supervisor")
 
     public func notice(_ message: String) {

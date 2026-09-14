@@ -46,7 +46,7 @@ public struct HardwareTopologyNode: Identifiable, Codable, Sendable, Equatable {
             return bsdInterface
         }
         if !vendorId.isEmpty || !productId.isEmpty || !serialNumber.isEmpty {
-            return "\(vendorId):\(productId):\(serialNumber)"
+            return "\(vendorId):\(productId):\(serialNumber):\(busPath ?? "")"
         }
         return usbDriver
     }
@@ -63,6 +63,7 @@ public struct HardwareTopologyNode: Identifiable, Codable, Sendable, Equatable {
     public let macAddress: String
     public let status: String
     public let driverType: String
+    public let busPath: String?
 
     enum CodingKeys: String, CodingKey {
         case usbDriver = "usb_driver"
@@ -78,9 +79,10 @@ public struct HardwareTopologyNode: Identifiable, Codable, Sendable, Equatable {
         case macAddress = "mac_address"
         case status
         case driverType = "driver_type"
+        case busPath = "bus_path"
     }
 
-    public init(usbDriver: String, vendorId: String, productId: String, serialNumber: String, speed: String, bsdInterface: String, networkTarget: String, ipAddress: String, subnetMask: String, gateway: String, macAddress: String, status: String, driverType: String) {
+    public init(usbDriver: String, vendorId: String, productId: String, serialNumber: String, speed: String, bsdInterface: String, networkTarget: String, ipAddress: String, subnetMask: String, gateway: String, macAddress: String, status: String, driverType: String, busPath: String? = nil) {
         self.usbDriver = usbDriver
         self.vendorId = vendorId
         self.productId = productId
@@ -94,12 +96,13 @@ public struct HardwareTopologyNode: Identifiable, Codable, Sendable, Equatable {
         self.macAddress = macAddress
         self.status = status
         self.driverType = driverType
+        self.busPath = busPath
     }
 
     /// Stable identifier for a dongle (no BSD interface). Used to remember a
     /// selected dongle target across refreshes.
     public static func dongleId(_ node: HardwareTopologyNode) -> String {
-        "\(node.vendorId):\(node.productId):\(node.serialNumber)"
+        "\(node.vendorId):\(node.productId):\(node.serialNumber):\(node.busPath ?? "")"
     }
 
     public var category: DeviceCategory {
@@ -115,6 +118,7 @@ public struct HardwareTopologyNode: Identifiable, Codable, Sendable, Equatable {
             return .thunderbolt
         }
         if usbDriver.localizedCaseInsensitiveContains("wifi") ||
+           usbDriver.localizedCaseInsensitiveContains("wi-fi") ||
            usbDriver.localizedCaseInsensitiveContains("wlan") ||
            usbDriver.localizedCaseInsensitiveContains("aic8800") {
             return .usbWiFiDongle
@@ -142,13 +146,39 @@ public struct HardwareTopologyNode: Identifiable, Codable, Sendable, Equatable {
         if isStorageMode {
             return "STORAGE MODE"
         }
-        if !networkTarget.isEmpty {
+        if isConnected {
             return "CONNECTED"
         }
         if !bsdInterface.isEmpty {
             return "STANDBY"
         }
         return "DISCOVERED"
+    }
+
+    /// Older daemons append a description to the BSD name. Match the exact
+    /// token so en1 never acquires en10's counters, and never default to en0.
+    public var interfaceName: String {
+        bsdInterface.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? ""
+    }
+
+    public var isConnected: Bool {
+        let state = status.lowercased()
+        guard !isStorageMode, !interfaceName.isEmpty, !ipAddress.isEmpty,
+              !["disconnected", "inactive", "not connected", "unavailable"].contains(where: state.contains) else { return false }
+        return isDefaultRoute || state.contains("connected") || state.contains("active")
+    }
+
+    public func matchingStat(in stats: [InterfaceStat]) -> InterfaceStat? {
+        stats.first { $0.name == interfaceName }
+    }
+
+    public func diagnosticsUnavailableReason(stat: InterfaceStat?) -> String? {
+        if isStorageMode { return "This dongle is in storage mode. Set up its firmware before connecting to Wi-Fi." }
+        if interfaceName.isEmpty { return "Hardware detected, but no network interface is available. Connect the dongle before running tests." }
+        guard let stat, stat.name == interfaceName else { return "Waiting for live telemetry from \(interfaceName)." }
+        if !stat.isUp { return "\(interfaceName) is down. Connect this adapter before running tests." }
+        if ipAddress.isEmpty { return "\(interfaceName) has no IP address. Wait for the adapter to finish connecting." }
+        return nil
     }
 }
 
@@ -189,19 +219,27 @@ public struct PingResult: Identifiable, Codable, Sendable, Equatable {
     public let isReachable: Bool
     public let rttMs: Int64
     public let packetLossPercent: Double
+    public let error: String?
+    public let method: String?
+    public let sourceIP: String?
 
     enum CodingKeys: String, CodingKey {
         case target
         case isReachable = "is_reachable"
         case rttMs = "rtt_ms"
         case packetLossPercent = "packet_loss_percent"
+        case error, method
+        case sourceIP = "source_ip"
     }
 
-    public init(target: String, isReachable: Bool, rttMs: Int64, packetLossPercent: Double) {
+    public init(target: String, isReachable: Bool, rttMs: Int64, packetLossPercent: Double, error: String? = nil, method: String? = nil, sourceIP: String? = nil) {
         self.target = target
         self.isReachable = isReachable
         self.rttMs = rttMs
         self.packetLossPercent = packetLossPercent
+        self.error = error
+        self.method = method
+        self.sourceIP = sourceIP
     }
 }
 
@@ -241,6 +279,8 @@ public struct SpeedTestResult: Codable, Sendable, Equatable {
     public let bytesUploaded: Int64
     public let durationSec: Double
     public let status: String
+    public let error: String?
+    public let sourceIP: String?
 
     enum CodingKeys: String, CodingKey {
         case interface
@@ -250,10 +290,11 @@ public struct SpeedTestResult: Codable, Sendable, Equatable {
         case bytesDownloaded = "bytes_downloaded"
         case bytesUploaded = "bytes_uploaded"
         case durationSec = "duration_sec"
-        case status
+        case status, error
+        case sourceIP = "source_ip"
     }
 
-    public init(interface: String, downloadMbps: Double, uploadMbps: Double, latencyMs: Int64, bytesDownloaded: Int64, bytesUploaded: Int64, durationSec: Double, status: String) {
+    public init(interface: String, downloadMbps: Double, uploadMbps: Double, latencyMs: Int64, bytesDownloaded: Int64, bytesUploaded: Int64, durationSec: Double, status: String, error: String? = nil, sourceIP: String? = nil) {
         self.interface = interface
         self.downloadMbps = downloadMbps
         self.uploadMbps = uploadMbps
@@ -262,6 +303,8 @@ public struct SpeedTestResult: Codable, Sendable, Equatable {
         self.bytesUploaded = bytesUploaded
         self.durationSec = durationSec
         self.status = status
+        self.error = error
+        self.sourceIP = sourceIP
     }
 }
 
@@ -622,6 +665,8 @@ public struct SpeedTestReport: Codable, Sendable, Equatable {
     public let server: String
     public let timestamp: String
     public let isRunning: Bool
+    public let error: String?
+    public let sourceIP: String?
 
     enum CodingKeys: String, CodingKey {
         case phase
@@ -634,6 +679,8 @@ public struct SpeedTestReport: Codable, Sendable, Equatable {
         case bytesSent = "bytes_sent"
         case interface, server, timestamp
         case isRunning = "is_running"
+        case error
+        case sourceIP = "source_ip"
     }
 }
 

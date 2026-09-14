@@ -13,12 +13,18 @@ import (
 
 var (
 	DaemonBaseURL = "http://127.0.0.1:8990"
-	TestSSID      = "Starlink"
-	TestPassword  = "lemon123"
-	TestInterface = "en0"
+	TestSSID      = ""
+	TestPassword  = ""
+	TestInterface = ""
 )
 
 func TestE2E(t *testing.T) {
+	if os.Getenv("EH_HARDWARE_E2E") != "1" {
+		t.Skip("Hardware association tests require EH_HARDWARE_E2E=1, WIFI_SSID and WIFI_INTERFACE; they change the live connection")
+	}
+	if os.Getenv("WIFI_SSID") == "" || os.Getenv("WIFI_INTERFACE") == "" {
+		t.Fatal("Set WIFI_SSID and WIFI_INTERFACE explicitly so this test cannot use the wrong radio")
+	}
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Event Horizon End-to-End Test Suite")
 }

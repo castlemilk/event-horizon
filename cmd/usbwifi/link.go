@@ -45,6 +45,19 @@ func runCmdLink(ctx context.Context, args []string) int {
 		return 2
 	}
 
+	// One link at a time, software-enforced. A linkstate record whose
+	// writer is still alive means a link is running: a second CLI would
+	// claim the USB device mid-flight, and the two processes then fight
+	// over the radio with no way to report it coherently. Refuse rather
+	// than race.
+	if ls, ok := ReadLinkState(time.Now()); ok && ls.SSID != "" {
+		fmt.Printf("link: a link is already active on %s (%s, pid %d). "+
+			"Stop it first (or use the daemon's link API), and clear a stale record with "+
+			"rm ~/.event-horizon/linkstate.json if the process is actually dead.\n",
+			ls.SSID, ls.Iface, ls.PID)
+		return 1
+	}
+
 	dir := *fwDir
 	if dir == "" {
 		dir = defaultFirmwareDir()
@@ -150,6 +163,11 @@ func runCmdLink(ctx context.Context, args []string) int {
 	if *bssid != "" {
 		bringup = append(bringup, "--connect-bssid", *bssid)
 	}
+	// bridgeLinkSSID feeds the linkstate file (see bridge.go): the CLI
+	// holds the USB claim while the link is up, so the daemon cannot see
+	// the dongle and would otherwise report NO_DONGLE for a working link.
+	bridgeLinkSSID = *ssid
+
 	reportLink(LinkAssociating, "associating with "+*ssid)
 	fmt.Printf("link: associating with %q ...\n", *ssid)
 	return runCmdBringup(ctx, bringup)

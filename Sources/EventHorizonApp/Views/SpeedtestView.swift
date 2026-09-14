@@ -19,7 +19,7 @@ public struct SpeedtestView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Multi-Stream Speedtest")
                             .font(.headline)
-                        Text("Concurrent bandwidth & bufferbloat benchmarking")
+                        Text("Measured download, upload and latency for the selected adapter")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -44,17 +44,33 @@ public struct SpeedtestView: View {
                     .font(.caption.weight(.bold))
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(store.isRunningSpeedTest)
+                .disabled(store.isRunningSpeedTest || !store.canRunSelectedInterfaceDiagnostics)
             }
 
             Divider()
 
+            Picker("Test adapter", selection: Binding(get: { store.selectedInterface }, set: { store.selectDeviceInterface($0) })) {
+                Text(store.selectedInterface.isEmpty ? "Select an adapter" : store.selectedInterface).tag(store.selectedInterface)
+                ForEach(store.topologyNodes.filter { !$0.interfaceName.isEmpty && $0.interfaceName != store.selectedInterface }) { node in
+                    Text("\(node.usbDriver) · \(node.interfaceName)").tag(node.interfaceName)
+                }
+            }
+            .disabled(store.isRunningSpeedTest)
+            if !store.canRunSelectedInterfaceDiagnostics {
+                Text("Select a connected adapter with an IP address to run a test.").font(.caption).foregroundStyle(.secondary)
+            }
+            if let error = store.speedTestError ?? store.speedTestReport?.error {
+                Label(error, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
+            }
+            Text("Uses internet data. Results belong to the named interface; local-only links may not reach the test server.")
+                .font(.caption).foregroundStyle(.secondary)
+
             // Metrics Row (Download, Upload, Ping, Jitter)
-            let report = store.speedTestReport
+            let report = store.speedTestReport?.interface == store.selectedInterface ? store.speedTestReport : nil
             HStack(spacing: 12) {
                 SpeedMetricCard(
                     title: "DOWNLOAD",
-                    value: String(format: "%.1f", report?.downloadMbps ?? 184.6),
+                    value: report.map { $0.bytesReceived > 0 ? String(format: "%.1f", $0.downloadMbps) : "—" } ?? "—",
                     unit: "Mbps",
                     icon: "arrow.down.circle.fill",
                     color: .blue,
@@ -63,7 +79,7 @@ public struct SpeedtestView: View {
 
                 SpeedMetricCard(
                     title: "UPLOAD",
-                    value: String(format: "%.1f", report?.uploadMbps ?? 24.8),
+                    value: report.map { $0.bytesSent > 0 ? String(format: "%.1f", $0.uploadMbps) : "—" } ?? "—",
                     unit: "Mbps",
                     icon: "arrow.up.circle.fill",
                     color: .purple,
@@ -72,7 +88,7 @@ public struct SpeedtestView: View {
 
                 SpeedMetricCard(
                     title: "PING",
-                    value: "\(report?.pingMs ?? 18)",
+                    value: report.map { $0.pingMs >= 0 ? "\($0.pingMs)" : "—" } ?? "—",
                     unit: "ms",
                     icon: "timer",
                     color: .green,
@@ -81,12 +97,17 @@ public struct SpeedtestView: View {
 
                 SpeedMetricCard(
                     title: "JITTER",
-                    value: String(format: "%.1f", report?.jitterMs ?? 2.4),
+                    value: report.map { $0.jitterMs >= 0 ? String(format: "%.1f", $0.jitterMs) : "—" } ?? "—",
                     unit: "ms",
                     icon: "waveform.path",
                     color: .orange,
                     isActive: false
                 )
+            }
+
+            if let report {
+                Text("\(report.interface) · source \(report.sourceIP ?? "unavailable") · \(report.phase)")
+                    .font(.caption.monospaced()).foregroundStyle(.secondary)
             }
 
             // Progress Bar if running

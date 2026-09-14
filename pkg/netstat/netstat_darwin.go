@@ -92,12 +92,16 @@ type Monitor struct {
 	mu        sync.Mutex
 	prevStats map[string]InterfaceStat
 	lastCheck time.Time
+	readStats func() []InterfaceStat
+	now       func() time.Time
 }
 
 func NewMonitor() *Monitor {
 	return &Monitor{
 		prevStats: make(map[string]InterfaceStat),
 		lastCheck: time.Now(),
+		readStats: readInterfaceStats,
+		now:       time.Now,
 	}
 }
 
@@ -105,48 +109,52 @@ func (m *Monitor) GetInterfaceStats() []InterfaceStat {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	stats := m.readStats()
+	if stats == nil {
+		return nil
+	}
+	now := m.now()
+	elapsedSec := now.Sub(m.lastCheck).Seconds()
+	if elapsedSec <= 0 {
+		elapsedSec = 1.0
+	}
+	var results []InterfaceStat
+	nextStats := make(map[string]InterfaceStat, len(stats))
+	for _, stat := range stats {
+		name := stat.Name
+		if name == "" || name == "lo0" {
+			continue
+		}
+
+		if prev, ok := m.prevStats[name]; ok && stat.IsUp && prev.IsUp && stat.BytesIn >= prev.BytesIn && stat.BytesOut >= prev.BytesOut {
+			stat.RxRateKBps = float64(stat.BytesIn-prev.BytesIn) / 1024.0 / elapsedSec
+			stat.TxRateKBps = float64(stat.BytesOut-prev.BytesOut) / 1024.0 / elapsedSec
+		}
+
+		nextStats[name] = stat
+		results = append(results, stat)
+	}
+
+	m.prevStats = nextStats
+	m.lastCheck = now
+	return results
+}
+
+func readInterfaceStats() []InterfaceStat {
 	var rawStats [64]C.if_stats_t
 	count := C.get_interface_stats(&rawStats[0], 64)
 	if count < 0 {
 		return nil
 	}
-
-	now := time.Now()
-	elapsedSec := now.Sub(m.lastCheck).Seconds()
-	if elapsedSec <= 0 {
-		elapsedSec = 1.0
-	}
-
-	var results []InterfaceStat
-
+	results := make([]InterfaceStat, 0, int(count))
 	for i := 0; i < int(count); i++ {
 		st := rawStats[i]
-		name := C.GoString(&st.name[0])
-
-		if name == "" || name == "lo0" {
-			continue
-		}
-
-		stat := InterfaceStat{
-			Name:       name,
-			BytesIn:    uint64(st.bytes_in),
-			BytesOut:   uint64(st.bytes_out),
-			PacketsIn:  uint64(st.packets_in),
-			PacketsOut: uint64(st.packets_out),
-			ErrorsIn:   uint64(st.errors_in),
-			ErrorsOut:  uint64(st.errors_out),
-			IsUp:       st.is_up != 0,
-		}
-
-		if prev, ok := m.prevStats[name]; ok && stat.BytesIn >= prev.BytesIn && stat.BytesOut >= prev.BytesOut {
-			stat.RxRateKBps = float64(stat.BytesIn-prev.BytesIn) / 1024.0 / elapsedSec
-			stat.TxRateKBps = float64(stat.BytesOut-prev.BytesOut) / 1024.0 / elapsedSec
-		}
-
-		m.prevStats[name] = stat
-		results = append(results, stat)
+		results = append(results, InterfaceStat{
+			Name:    C.GoString(&st.name[0]),
+			BytesIn: uint64(st.bytes_in), BytesOut: uint64(st.bytes_out),
+			PacketsIn: uint64(st.packets_in), PacketsOut: uint64(st.packets_out),
+			ErrorsIn: uint64(st.errors_in), ErrorsOut: uint64(st.errors_out), IsUp: st.is_up != 0,
+		})
 	}
-
-	m.lastCheck = now
 	return results
 }

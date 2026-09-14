@@ -11,16 +11,23 @@ public final class WiFiManagerStore {
     public var pingResults: [PingResult] = []
     public var stabilityStats: StabilityStats?
     public var isConnecting = false
-    public var statusMessage = "Daemon Ready"
-    public var isDaemonConnected = true
+    public var statusMessage = "Starting background daemon…"
+    public private(set) var isStartingDaemon = false
+    public private(set) var isRefreshing = false
+    public private(set) var lastRefreshAt: Date?
+    // Starts disconnected: the daemon is a separate root process that may
+    // not be up yet, and an initial true painted the UI green before the
+    // first poll had even run.
+    public var isDaemonConnected = false
     public var selectedInterface: String = "en0"
     public var selectedDongleId: String? = nil
     public var pingTargetHost: String = "1.1.1.1"
     public var isPinging: Bool = false
     public var lastPingSuccess: Bool? = nil
-    public var lastPingRTTMs: Int64 = 12
-    public var starlinkDishReachable = false
-    public var starlinkPingMs: Int = 18
+    public var lastPingRTTMs: Int64 = 0
+    public var pingError: String?
+    public var terminalGatewayReachable = false
+    public var terminalGatewayPingMs: Int = 0
     public private(set) var signalHistory: [Double] = []
     public private(set) var latencyHistory: [Double] = []
     public private(set) var rxHistory: [Double] = []
@@ -42,6 +49,10 @@ public final class WiFiManagerStore {
     private let client: WiFiDaemonClientProviding
     private let supervisor: RuntimeSupervising
     private var pollTask: Task<Void, Never>?
+    private let pollingInterval: Duration
+    private let manageDaemon: Bool
+    private var hasExplicitSelection = false
+    private var selectionGeneration = 0
 
     /// How long to leave between attempts to bring a dead daemon back.
     ///
@@ -60,34 +71,48 @@ public final class WiFiManagerStore {
 
     public init(
         client: WiFiDaemonClientProviding = WiFiDaemonClient(),
-        supervisor: RuntimeSupervising = RuntimeSupervisor()
+        supervisor: RuntimeSupervising = RuntimeSupervisor(),
+        autoStart: Bool = true,
+        pollingInterval: Duration = .seconds(3),
+        manageDaemon: Bool = true
     ) {
         self.client = client
         self.supervisor = supervisor
-        Task {
-            await bootstrap()
+        self.pollingInterval = pollingInterval
+        self.manageDaemon = manageDaemon
+        if autoStart {
+            Task { [weak self] in await self?.bootstrap() }
         }
     }
 
     public func bootstrap() async {
         guard !isBootstrapped else {
-            await refreshData()
             return
         }
         isBootstrapped = true
+        isStartingDaemon = true
+        defer {
+            isStartingDaemon = false
+            if !Task.isCancelled { startPeriodicPolling() }
+        }
         do {
-            try await supervisor.ensureDaemonRunning()
-            isDaemonConnected = true
-            statusMessage = "Connected to USB Daemon"
+            if manageDaemon { try await supervisor.ensureDaemonRunning() }
+            try Task.checkCancellation()
             await refreshData()
-            startPeriodicPolling()
+            statusMessage = isDaemonConnected ? "Connected to USB daemon" : "Waiting for the USB daemon to respond…"
         } catch {
+            guard !Task.isCancelled else { return }
             isDaemonConnected = false
+            daemonRecoveryPaused = await supervisor.privilegeError() != nil
+            lastDaemonRecoveryAttempt = .now
             statusMessage = "Daemon offline: \(error.localizedDescription)"
         }
     }
 
     public func refreshData() async {
+        guard !isRefreshing, !Task.isCancelled else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
         async let fetchedStatus = try? client.fetchStatus()
         async let fetchedHotspots = try? client.fetchHotspots()
         async let fetchedTopology = try? client.fetchHardwareTopology()
@@ -95,16 +120,29 @@ public final class WiFiManagerStore {
         async let fetchedUptime = try? client.fetchUptimeStats()
 
         let (status, hotspotsList, topNodes, stats, uptime) = await (fetchedStatus, fetchedHotspots, fetchedTopology, fetchedTelemetry, fetchedUptime)
+        guard !Task.isCancelled else { return }
+        let wasConnected = isDaemonConnected
+        isDaemonConnected = status != nil
+        guard isDaemonConnected else {
+            clearLiveData()
+            if wasConnected { statusMessage = "USB daemon connection lost. Waiting to reconnect…" }
+            return
+        }
+        lastRefreshAt = Date()
+        if !wasConnected { statusMessage = "Connected to USB daemon" }
 
-        if let topNodes, !topNodes.isEmpty {
+        if let topNodes {
             self.topologyNodes = self.sortedInterfaces(topNodes)
-            if let active = self.topologyNodes.first(where: { $0.status.contains("Default Route") }),
-               !active.bsdInterface.isEmpty {
-                if let current = self.topologyNodes.first(where: { $0.bsdInterface == self.selectedInterface }),
-                   !current.status.contains("Default Route") {
-                    self.selectedInterface = active.bsdInterface
-                }
+            if !hasExplicitSelection, let active = interfaceNodes.first {
+                if selectedInterface != active.interfaceName { clearSelectedMeasurements() }
+                selectedInterface = active.interfaceName
             }
+            if selectedDongleId != nil || !topologyNodes.contains(where: { $0.interfaceName == selectedInterface }) {
+                clearSelectedMeasurements()
+            }
+        } else {
+            self.topologyNodes = []
+            clearSelectedMeasurements()
         }
 
         if let hotspotsList {
@@ -115,33 +153,40 @@ public final class WiFiManagerStore {
                 return $0.ssid < $1.ssid
             }
 
-            if let active = self.hotspots.first(where: { $0.isSelected }) {
-                self.selectedHotspot = active
-            } else if self.selectedHotspot == nil {
-                self.selectedHotspot = self.hotspots.first
-            }
+            self.selectedHotspot = self.hotspots.first(where: { $0.isSelected })
+        } else {
+            self.hotspots = []
+            self.selectedHotspot = nil
         }
 
         if let stats {
             self.interfaceStats = stats
-            if let first = stats.first(where: { $0.name == self.selectedInterface }) ?? stats.first {
+            if let first = stats.first(where: { $0.name == self.selectedInterface }) {
                 self.rxHistory = appendSample(self.rxHistory, value: first.rxRateKBps)
                 self.txHistory = appendSample(self.txHistory, value: first.txRateKBps)
             }
+        } else {
+            self.interfaceStats = []
+            self.rxHistory = []
+            self.txHistory = []
         }
 
-        if let uptime {
-            self.stabilityStats = uptime
+        self.stabilityStats = uptime
+
+        let generation = selectionGeneration
+        if canRunSelectedInterfaceDiagnostics, !isPinging, !isRunningDiagnostics {
+            let pings = try? await client.fetchPingDiagnostics(interface: selectedInterface, target: pingTargetHost)
+            guard !Task.isCancelled else { return }
+            if generation == selectionGeneration {
+                self.pingResults = pings ?? []
+                if let ping = pings?.first, ping.isReachable {
+                    self.latencyHistory = appendSample(self.latencyHistory, value: Double(ping.rttMs))
+                }
+            }
         }
 
-        if let pings = try? await client.fetchPingDiagnostics(interface: selectedInterface, target: pingTargetHost) {
-            self.pingResults = pings
-            self.latencyHistory = appendSample(self.latencyHistory, value: Double(pings.first?.rttMs ?? 0))
-        }
-
-        if let suite = try? await client.fetchDiagnosticSuite(interface: selectedInterface) {
-            self.diagnosticReport = suite
-        }
+        // The full diagnostic suite is explicitly requested by the user. Running
+        // it on every poll launches overlapping subprocesses and active probes.
 
         if self.supportedChipsets.isEmpty {
             if let chipsets = try? await client.fetchSupportedDrivers() {
@@ -153,22 +198,21 @@ public final class WiFiManagerStore {
             self.supervisorStatus = sup
         }
 
-        self.signalHistory = appendSample(self.signalHistory, value: Double(activeHotspotForSelectedInterface.rssi))
-
-        if status != nil || !self.topologyNodes.isEmpty {
-            self.isDaemonConnected = true
-        } else {
-            self.isDaemonConnected = false
+        if activeHotspotForSelectedInterface.rssi < 0 {
+            self.signalHistory = appendSample(self.signalHistory, value: Double(activeHotspotForSelectedInterface.rssi))
         }
-        checkStarlinkDishTelemetry()
+        checkTerminalGatewayTelemetry()
     }
 
-    public func connect(to ssid: String, passphrase: String = "") async {
+    @discardableResult
+    public func connect(to ssid: String, passphrase: String = "") async -> Bool {
+        guard !isConnecting else { return false }
         if selectedInterface.isEmpty {
-            statusMessage = "Select an active interface (e.g. en0) before connecting — AIC8800D80 has no macOS driver"
-            return
+            statusMessage = "This dongle has no network interface yet. Use its connection controls to bring the radio online."
+            return false
         }
         isConnecting = true
+        defer { isConnecting = false }
         statusMessage = "Authenticating with '\(ssid)' on \(selectedInterface)..."
         do {
             let ap = try await client.connectToHotspot(ssid: ssid, passphrase: passphrase)
@@ -207,10 +251,12 @@ public final class WiFiManagerStore {
             }
 
             self.statusMessage = "Connected to '\(ssid)' on \(selectedInterface)"
+            await refreshData()
+            return true
         } catch {
             self.statusMessage = "Connection failed: \(error.localizedDescription)"
+            return false
         }
-        isConnecting = false
     }
 
     public func disconnect() async {
@@ -230,8 +276,8 @@ public final class WiFiManagerStore {
     }
 
     public var activeHotspotForSelectedInterface: AccessPoint {
-        if let node = topologyNodes.first(where: { $0.bsdInterface == selectedInterface }),
-           !node.networkTarget.isEmpty && node.networkTarget != "Disconnected" {
+        if let node = topologyNodes.first(where: { $0.interfaceName == selectedInterface }),
+           node.isConnected, !node.networkTarget.isEmpty && node.networkTarget != "Disconnected" {
             let observed = hotspots.first(where: { !$0.ssid.isEmpty && $0.ssid == node.networkTarget })
             let isWired = node.usbDriver.localizedCaseInsensitiveContains("ethernet")
                 || node.usbDriver.localizedCaseInsensitiveContains("lan")
@@ -239,34 +285,26 @@ public final class WiFiManagerStore {
             return AccessPoint(
                 ssid: observed?.ssid ?? node.networkTarget,
                 bssid: observed?.bssid ?? "",
-                rssi: observed?.rssi ?? -45,
-                channel: observed?.channel ?? 6,
-                security: isWired ? "Ethernet" : (observed?.security ?? "WPA2"),
+                rssi: observed?.rssi ?? 0,
+                channel: observed?.channel ?? 0,
+                security: isWired ? "Ethernet" : (observed?.security ?? "Unknown"),
                 isSelected: true
             )
         }
-        if let active = hotspots.first(where: { $0.isSelected }) {
-            return active
-        }
-        return selectedHotspot ?? AccessPoint(ssid: "", bssid: "", rssi: 0, channel: 0, security: "", isSelected: false)
+        return AccessPoint(ssid: "", bssid: "", rssi: 0, channel: 0, security: "", isSelected: false)
     }
 
     public var connectedHotspots: [AccessPoint] {
         var results: [AccessPoint] = []
-        for ap in hotspots where ap.isSelected && !ap.ssid.isEmpty {
-            if !results.contains(where: { $0.ssid == ap.ssid }) {
-                results.append(ap)
-            }
-        }
-        for node in topologyNodes where !node.networkTarget.isEmpty && node.networkTarget != "Disconnected" {
+        for node in activeConnectedNodes where !node.networkTarget.isEmpty {
             if !results.contains(where: { $0.ssid == node.networkTarget }) {
                 let observed = hotspots.first(where: { $0.ssid == node.networkTarget })
                 results.append(AccessPoint(
                     ssid: node.networkTarget,
                     bssid: observed?.bssid ?? "",
-                    rssi: observed?.rssi ?? -45,
-                    channel: observed?.channel ?? 6,
-                    security: observed?.security ?? "WPA2",
+                    rssi: observed?.rssi ?? 0,
+                    channel: observed?.channel ?? 0,
+                    security: observed?.security ?? "Unknown",
                     isSelected: true
                 ))
             }
@@ -276,7 +314,7 @@ public final class WiFiManagerStore {
 
     public var activeConnectedNodes: [HardwareTopologyNode] {
         topologyNodes.filter { node in
-            !node.networkTarget.isEmpty
+            node.isConnected && !node.networkTarget.isEmpty
                 && node.networkTarget != "Disconnected"
                 && node.networkTarget != "<redacted>"
                 && node.networkTarget != "<hidden>"
@@ -284,23 +322,41 @@ public final class WiFiManagerStore {
     }
 
     public var primaryConnectedSSID: String? {
+        guard isDaemonConnected else { return nil }
         if let first = activeConnectedNodes.first, !first.networkTarget.isEmpty {
             return first.networkTarget
         }
         if let first = connectedHotspots.first, !first.ssid.isEmpty {
             return first.ssid
         }
-        if let sel = selectedHotspot, sel.isSelected && !sel.ssid.isEmpty {
-            return sel.ssid
-        }
         return nil
     }
 
+    public var selectedTelemetry: InterfaceStat? {
+        guard isDaemonConnected, !selectedInterface.isEmpty, selectedDongleId == nil else { return nil }
+        return topologyNodes.first(where: { $0.interfaceName == selectedInterface })?.matchingStat(in: interfaceStats)
+    }
+
+    public var canRunSelectedInterfaceDiagnostics: Bool {
+        diagnosticsUnavailableReason(interface: selectedInterface) == nil
+    }
+
+    private func diagnosticsUnavailableReason(interface: String) -> String? {
+        guard isDaemonConnected else { return "The USB daemon is offline. Reconnect it before running tests." }
+        guard !interface.isEmpty else { return "This dongle has no network interface. Connect it before running tests." }
+        guard let node = topologyNodes.first(where: { $0.interfaceName == interface }) else {
+            return "\(interface) is no longer available. Reconnect the adapter or select another device."
+        }
+        return node.diagnosticsUnavailableReason(stat: node.matchingStat(in: interfaceStats))
+    }
+
     public func selectDeviceInterface(_ iface: String) {
+        hasExplicitSelection = true
+        if selectedInterface != iface || selectedDongleId != nil { clearSelectedMeasurements() }
         self.selectedInterface = iface
         self.selectedDongleId = nil
         self.selectedHotspot = activeHotspotForSelectedInterface
-        guard let node = topologyNodes.first(where: { $0.bsdInterface == iface }) else {
+        guard let node = topologyNodes.first(where: { $0.interfaceName == iface }) else {
             self.statusMessage = "Targeting interface '\(iface)'"
             return
         }
@@ -309,6 +365,8 @@ public final class WiFiManagerStore {
     }
 
     public func selectDongle(_ node: HardwareTopologyNode) {
+        hasExplicitSelection = true
+        clearSelectedMeasurements()
         self.selectedDongleId = HardwareTopologyNode.dongleId(node)
         self.selectedInterface = ""
         self.selectedHotspot = nil
@@ -334,7 +392,7 @@ public final class WiFiManagerStore {
 
     public var interfaceNodes: [HardwareTopologyNode] {
         topologyNodes
-            .filter { !$0.bsdInterface.isEmpty }
+            .filter { !$0.interfaceName.isEmpty }
             .sorted {
                 let aDefault = $0.status.contains("Default Route")
                 let bDefault = $1.status.contains("Default Route")
@@ -344,7 +402,7 @@ public final class WiFiManagerStore {
     }
 
     public var dongleNodes: [HardwareTopologyNode] {
-        topologyNodes.filter { $0.bsdInterface.isEmpty }
+        topologyNodes.filter { $0.interfaceName.isEmpty }
     }
 
     /// Devices worth offering in the systray quick picker: live/active interfaces
@@ -359,16 +417,27 @@ public final class WiFiManagerStore {
     }
 
     public func runSpeedTest(interface: String = "") async {
+        guard !isRunningSpeedTest else { return }
         let iface = interface.isEmpty ? selectedInterface : interface
-        isRunningSpeedTest = true
         speedTestResult = nil
         speedTestError = nil
+        if let reason = diagnosticsUnavailableReason(interface: iface) { speedTestError = reason; return }
+        let generation = selectionGeneration
+        isRunningSpeedTest = true
+        defer { isRunningSpeedTest = false }
         do {
-            speedTestResult = try await client.fetchSpeedTest(interface: iface)
+            let result = try await client.fetchSpeedTest(interface: iface)
+            guard !Task.isCancelled, generation == selectionGeneration else { return }
+            guard result.interface == iface else {
+                speedTestError = "The daemon returned a speed test for another interface. Try again."
+                return
+            }
+            speedTestResult = result
+            speedTestError = result.error
+            if result.status == "error", speedTestError == nil { speedTestError = "The speed test could not complete on \(iface)." }
         } catch {
-            speedTestError = error.localizedDescription
+            if generation == selectionGeneration { speedTestError = error.localizedDescription }
         }
-        isRunningSpeedTest = false
     }
 
     private func sortedInterfaces(_ nodes: [HardwareTopologyNode]) -> [HardwareTopologyNode] {
@@ -381,34 +450,49 @@ public final class WiFiManagerStore {
     }
 
     public func runPingDiagnostic(target: String? = nil) async {
-        let tgt = target ?? pingTargetHost
+        guard !isPinging else { return }
+        let tgt = (target ?? pingTargetHost).trimmingCharacters(in: .whitespacesAndNewlines)
         self.pingTargetHost = tgt
-        self.isPinging = true
-        self.lastPingSuccess = nil
+        self.lastPingSuccess = false
+        self.lastPingRTTMs = 0
+        self.pingResults = []
+        self.pingError = nil
+        if let reason = diagnosticsUnavailableReason(interface: selectedInterface) { pingError = reason; return }
+        guard !tgt.isEmpty else { pingError = "Enter a hostname or IP address to ping."; return }
+        let generation = selectionGeneration
+        let iface = selectedInterface
+        isPinging = true
+        defer { isPinging = false }
         do {
-            let pings = try await client.fetchPingDiagnostics(interface: selectedInterface, target: tgt)
-            if !pings.isEmpty {
-                self.pingResults = pings
-                let first = pings[0]
-                self.lastPingSuccess = first.isReachable
-                self.lastPingRTTMs = first.rttMs > 0 ? first.rttMs : 12
+            let pings = try await client.fetchPingDiagnostics(interface: iface, target: tgt)
+            guard !Task.isCancelled, generation == selectionGeneration else { return }
+            self.pingResults = pings
+            if let first = pings.first {
+                lastPingSuccess = first.isReachable
+                lastPingRTTMs = first.isReachable ? first.rttMs : 0
+                pingError = first.error
             } else {
-                self.lastPingSuccess = true
-                self.lastPingRTTMs = 12
+                pingError = "The daemon returned no ping measurements. Try again."
             }
+            checkTerminalGatewayTelemetry()
         } catch {
-            self.lastPingSuccess = true
-            self.lastPingRTTMs = 14
+            if generation == selectionGeneration { pingError = error.localizedDescription }
         }
-        self.isPinging = false
     }
 
     public func runFullDiagnostics(interface: String? = nil) async {
-        let targetIface = interface ?? (selectedInterface.isEmpty ? "en0" : selectedInterface)
-        self.isRunningDiagnostics = true
+        guard !isRunningDiagnostics else { return }
+        let targetIface = interface ?? selectedInterface
         self.diagnosticError = nil
+        self.diagnosticReport = nil
+        if let reason = diagnosticsUnavailableReason(interface: targetIface) { diagnosticError = reason; return }
+        let generation = selectionGeneration
+        self.isRunningDiagnostics = true
+        defer { isRunningDiagnostics = false }
         do {
             let report = try await client.fetchDiagnosticSuite(interface: targetIface)
+            guard !Task.isCancelled, generation == selectionGeneration else { return }
+            guard report.iface == targetIface else { diagnosticError = "The daemon returned diagnostics for another interface."; return }
             self.diagnosticReport = report
             self.pingResults = report.pings
             if let first = report.pings.first(where: { $0.isReachable }) ?? report.pings.first {
@@ -417,9 +501,39 @@ public final class WiFiManagerStore {
                 self.latencyHistory = appendSample(self.latencyHistory, value: Double(first.rttMs))
             }
         } catch {
-            self.diagnosticError = error.localizedDescription
+            if generation == selectionGeneration { diagnosticError = error.localizedDescription }
         }
-        self.isRunningDiagnostics = false
+    }
+
+    private func clearSelectedMeasurements() {
+        selectionGeneration += 1
+        pingResults = []
+        lastPingSuccess = nil
+        lastPingRTTMs = 0
+        pingError = nil
+        diagnosticReport = nil
+        diagnosticError = nil
+        speedTestResult = nil
+        speedTestReport = nil
+        speedTestError = nil
+        signalHistory = []
+        latencyHistory = []
+        rxHistory = []
+        txHistory = []
+        terminalGatewayReachable = false
+        terminalGatewayPingMs = 0
+    }
+
+    private func clearLiveData() {
+        topologyNodes = []
+        interfaceStats = []
+        hotspots = []
+        selectedHotspot = nil
+        stabilityStats = nil
+        supervisorStatus = nil
+        spectrumReport = nil
+        routingPolicy = nil
+        clearSelectedMeasurements()
     }
 
     private func appendSample(_ history: [Double], value: Double) -> [Double] {
@@ -431,24 +545,34 @@ public final class WiFiManagerStore {
         return next
     }
 
-    private func checkStarlinkDishTelemetry() {
-        // A Starlink dish (192.168.100.1) is only reachable when on a Starlink network.
-        let onStarlink = selectedHotspot?.ssid.contains("Starlink") == true
-        self.starlinkDishReachable = onStarlink
-        if onStarlink, pingResults.contains(where: { $0.target.contains("192.168.100.1") }) {
-            self.starlinkPingMs = Int(pingResults.first(where: { $0.target.contains("192.168.100.1") })?.rttMs ?? 0)
+    private func checkTerminalGatewayTelemetry() {
+        // Reachability of a terminal LAN gateway (192.168.100.1) is a
+        // routing fact, not an SSID fact: the old check gated on the
+        // hotspot's NAME containing "Starlink", which guessed at the
+        // network's purpose from its label and mislabelled every other
+        // network a terminal might sit behind (guest bridges, dongle
+        // utun, plain LANs). The gateway is reachable when the route to
+        // it answers — nothing more is knowable from here.
+        let terminalPing = pingResults.first(where: { $0.target == "192.168.100.1" && $0.isReachable })
+        let hasRouteToTerminal = terminalPing != nil
+        self.terminalGatewayReachable = hasRouteToTerminal
+        if hasRouteToTerminal {
+            self.terminalGatewayPingMs = Int(terminalPing?.rttMs ?? 0)
         } else {
-            self.starlinkPingMs = 0
+            self.terminalGatewayPingMs = 0
         }
     }
 
     private func startPeriodicPolling() {
-        pollTask?.cancel()
-        pollTask = Task {
+        guard pollTask == nil else { return }
+        let interval = pollingInterval
+        pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3))
-                await refreshData()
-                await recoverDaemonIfNeeded()
+                do { try await Task.sleep(for: interval) } catch { return }
+                guard !Task.isCancelled, let self else { return }
+                await self.refreshData()
+                guard !Task.isCancelled else { return }
+                await self.recoverDaemonIfNeeded()
             }
         }
     }
@@ -464,6 +588,7 @@ public final class WiFiManagerStore {
     /// `PrivilegedLauncher` exists to make unnecessary. The app owns the
     /// daemon's lifetime, so the app should be the one to restart it.
     private func recoverDaemonIfNeeded() async {
+        guard manageDaemon, !Task.isCancelled, !isStartingDaemon else { return }
         guard !isDaemonConnected else {
             // Healthy: clear the pacing so the next outage is acted on at once.
             lastDaemonRecoveryAttempt = nil
@@ -479,12 +604,15 @@ public final class WiFiManagerStore {
         lastDaemonRecoveryAttempt = now
 
         statusMessage = "Daemon stopped — restarting it…"
+        isStartingDaemon = true
+        defer { isStartingDaemon = false }
         do {
             try await supervisor.ensureDaemonRunning()
-            isDaemonConnected = true
-            statusMessage = "Daemon restarted"
+            try Task.checkCancellation()
             await refreshData()
+            statusMessage = isDaemonConnected ? "Daemon reconnected" : "Waiting for the USB daemon to respond…"
         } catch {
+            guard !Task.isCancelled else { return }
             if let why = await supervisor.privilegeError() {
                 daemonRecoveryPaused = true
                 // Name the permanent fix, not just the symptom. Installing the
@@ -548,6 +676,16 @@ public final class WiFiManagerStore {
         }
     }
 
+    /// Explicitly retries a declined or failed launch without tearing down an
+    /// already healthy daemon or installing a system service.
+    public func retryDaemonConnection() async {
+        guard !isStartingDaemon else { return }
+        daemonRecoveryPaused = false
+        lastDaemonRecoveryAttempt = nil
+        isBootstrapped = false
+        await bootstrap()
+    }
+
     public func fetchSpectrumReport() async {
         if let rep = try? await client.fetchSpectrumReport() {
             self.spectrumReport = rep
@@ -555,26 +693,40 @@ public final class WiFiManagerStore {
     }
 
     public func startMultiStreamSpeedTest(interface: String? = nil) async {
+        guard !isRunningSpeedTest else { return }
         let iface = interface ?? selectedInterface
-        self.isRunningSpeedTest = true
         self.speedTestError = nil
+        self.speedTestReport = nil
+        if let reason = diagnosticsUnavailableReason(interface: iface) { speedTestError = reason; return }
+        let generation = selectionGeneration
+        self.isRunningSpeedTest = true
+        defer { isRunningSpeedTest = false }
         do {
             let initial = try await client.startMultiStreamSpeedTest(interface: iface)
+            guard !Task.isCancelled, generation == selectionGeneration else { return }
+            guard initial.interface == iface else { speedTestError = "A speed test is already running on another interface."; return }
             self.speedTestReport = initial
+            if !initial.isRunning {
+                speedTestError = initial.error ?? (initial.phase == "complete" ? nil : "The speed test could not start.")
+                return
+            }
             
             // Poll progress until complete
-            for _ in 0..<40 {
+            for _ in 0..<150 {
                 try await Task.sleep(for: .milliseconds(400))
+                guard generation == selectionGeneration else { return }
                 let current = try await client.fetchSpeedTestStatus()
+                guard !Task.isCancelled, generation == selectionGeneration else { return }
+                guard current.interface == iface else { speedTestError = "The daemon returned a speed test for another interface."; return }
                 self.speedTestReport = current
-                if !current.isRunning && current.phase == "complete" {
-                    break
+                if !current.isRunning {
+                    speedTestError = current.error ?? (current.phase == "complete" ? nil : "The speed test did not complete.")
+                    return
                 }
             }
-            self.isRunningSpeedTest = false
+            self.speedTestError = "Timed out waiting for the speed test to finish. The daemon may still be testing \(iface)."
         } catch {
-            self.speedTestError = error.localizedDescription
-            self.isRunningSpeedTest = false
+            if generation == selectionGeneration { speedTestError = error.localizedDescription }
         }
     }
 
@@ -612,6 +764,4 @@ public final class WiFiManagerStore {
         pollTask = nil
     }
 
-    deinit {
-    }
 }

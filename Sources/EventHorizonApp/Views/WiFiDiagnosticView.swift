@@ -4,7 +4,7 @@ import EventHorizonCore
 public struct WiFiDiagnosticView: View {
     @Bindable var store: WiFiManagerStore
     @State private var selectedFilter: DiagnosticFilter = .all
-    @State private var selectedTargetInterface: String = "en0"
+    @State private var selectedTargetInterface: String = ""
 
     public enum DiagnosticFilter: String, CaseIterable, Identifiable, Sendable {
         case all = "All Results"
@@ -41,6 +41,9 @@ public struct WiFiDiagnosticView: View {
                         .foregroundStyle(.secondary)
                     
                     Picker("Interface", selection: $selectedTargetInterface) {
+                        if !availableInterfaces.contains(selectedTargetInterface) {
+                            Text(selectedTargetInterface.isEmpty ? "Select an adapter" : "\(selectedTargetInterface) unavailable").tag(selectedTargetInterface)
+                        }
                         ForEach(availableInterfaces, id: \.self) { iface in
                             Text(ifaceLabel(for: iface)).tag(iface)
                         }
@@ -84,7 +87,7 @@ public struct WiFiDiagnosticView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(store.isRunningDiagnostics)
+                .disabled(store.isRunningDiagnostics || !canRunDiagnostics)
             }
             .padding(12)
             .background(Color(nsColor: .controlBackgroundColor))
@@ -93,6 +96,13 @@ public struct WiFiDiagnosticView: View {
                 RoundedRectangle(cornerRadius: 10)
                     .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
             )
+
+            if let error = store.diagnosticError {
+                Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+            }
+            if !canRunDiagnostics {
+                Text("Select an adapter with a live interface and IP address.").font(.caption).foregroundStyle(.secondary)
+            }
 
             // Diagnostic Quality Score & Link Analytics Hero Card
             if let report = currentReport {
@@ -137,22 +147,21 @@ public struct WiFiDiagnosticView: View {
             if !store.selectedInterface.isEmpty {
                 selectedTargetInterface = store.selectedInterface
             }
-            if currentReport == nil {
-                Task {
-                    await store.runFullDiagnostics(interface: selectedTargetInterface)
-                }
-            }
         }
+        .onChange(of: selectedTargetInterface) { _, interface in store.selectDeviceInterface(interface) }
     }
 
     private var currentReport: DiagnosticSuiteReport? {
-        store.diagnosticReport
+        store.diagnosticReport?.iface == selectedTargetInterface ? store.diagnosticReport : nil
     }
 
     private var availableInterfaces: [String] {
-        let list = store.topologyNodes.map(\.bsdInterface).filter { !$0.isEmpty }
-        if list.isEmpty { return ["en0", "utun10"] }
-        return list
+        Array(Set(store.topologyNodes.map(\.interfaceName).filter { !$0.isEmpty })).sorted()
+    }
+
+    private var canRunDiagnostics: Bool {
+        guard store.isDaemonConnected, let node = store.topologyNodes.first(where: { $0.interfaceName == selectedTargetInterface }) else { return false }
+        return node.diagnosticsUnavailableReason(stat: node.matchingStat(in: store.interfaceStats)) == nil
     }
 
     private func ifaceLabel(for iface: String) -> String {
@@ -224,9 +233,9 @@ struct DiagnosticScoreHeroCard: View {
                 )
 
                 ScoreMetricTile(
-                    title: "Link Uptime",
-                    value: stability?.uptimeFormatted ?? "100%",
-                    subtitle: stability?.currentStatus ?? "Active",
+                    title: "Daemon Uptime",
+                    value: stability?.uptimeFormatted ?? "—",
+                    subtitle: stability?.currentStatus ?? "Not observed",
                     icon: "clock.arrow.2.circlepath",
                     color: .purple
                 )
@@ -397,7 +406,7 @@ struct PingResultRow: View {
         case "1.1.1.1": return "Cloudflare Primary DNS"
         case "8.8.8.8": return "Google Public DNS"
         case "9.9.9.9": return "Quad9 Secure DNS"
-        case "192.168.100.1": return "Starlink Dish Terminal"
+        case "192.168.100.1": return "Terminal LAN gateway"
         case "192.168.4.1", "192.168.0.1": return "Default Gateway Router"
         default: return target
         }

@@ -7,7 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
-	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,6 +23,7 @@ type HTTPProbeResult struct {
 	TotalMs        int64  `json:"total_ms"`
 	IsSuccess      bool   `json:"is_success"`
 	Protocol       string `json:"protocol"`
+ Error string `json:"error,omitempty"`
 }
 
 // DNSProbeResult represents the timing and record resolution details for a domain query.
@@ -32,6 +33,7 @@ type DNSProbeResult struct {
 	IPs           []string `json:"ips"`
 	IsSuccess     bool     `json:"is_success"`
 	Server        string   `json:"server"`
+ Error string `json:"error,omitempty"`
 }
 
 // DiagnosticSuiteReport aggregates ping, HTTP, DNS, jitter, and link score telemetry.
@@ -50,16 +52,25 @@ type DiagnosticSuiteReport struct {
 	QualityScore      float64           `json:"quality_score"`
 	QualityGrade      string            `json:"quality_grade"`
 	Timestamp         time.Time         `json:"timestamp"`
+ Error string `json:"error,omitempty"`
 }
 
 // ProbeHTTP executes an HTTP/HTTPS trace measuring DNS, TCP, TLS, TTFB, and Total latency.
 func (t *Tester) ProbeHTTP(targetName, targetURL, ifaceName string) HTTPProbeResult {
+ return t.ProbeHTTPContext(context.Background(), targetName, targetURL, ifaceName)
+}
+
+func (t *Tester) ProbeHTTPContext(ctx context.Context, targetName, targetURL, ifaceName string) HTTPProbeResult {
+ binding, bindingErr := resolveInterface(ifaceName)
+ if bindingErr != nil { return HTTPProbeResult{Target: targetName, URL: targetURL, Error: bindingErr.Error()} }
+ var traceMu sync.Mutex
+ record := func(target *time.Time) { traceMu.Lock(); *target = time.Now(); traceMu.Unlock() }
 	var dnsStart, dnsDone time.Time
 	var connStart, connDone time.Time
 	var tlsStart, tlsDone time.Time
 	var ttfbDone time.Time
 
-	req, err := http.NewRequestWithContext(context.Background(), "GET", targetURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
 	if err != nil {
 		return HTTPProbeResult{
 			Target:    targetName,
@@ -69,48 +80,28 @@ func (t *Tester) ProbeHTTP(targetName, targetURL, ifaceName string) HTTPProbeRes
 	}
 
 	trace := &httptrace.ClientTrace{
-		DNSStart:             func(_ httptrace.DNSStartInfo) { dnsStart = time.Now() },
-		DNSDone:              func(_ httptrace.DNSDoneInfo) { dnsDone = time.Now() },
-		ConnectStart:         func(_, _ string) { connStart = time.Now() },
-		ConnectDone:          func(_, _ string, _ error) { connDone = time.Now() },
-		TLSHandshakeStart:    func() { tlsStart = time.Now() },
-		TLSHandshakeDone:     func(_ tls.ConnectionState, _ error) { tlsDone = time.Now() },
-		GotFirstResponseByte: func() { ttfbDone = time.Now() },
+		DNSStart:             func(_ httptrace.DNSStartInfo) { record(&dnsStart) },
+		DNSDone:              func(_ httptrace.DNSDoneInfo) { record(&dnsDone) },
+		ConnectStart:         func(_, _ string) { record(&connStart) },
+		ConnectDone:          func(_, _ string, _ error) { record(&connDone) },
+		TLSHandshakeStart:    func() { record(&tlsStart) },
+		TLSHandshakeDone:     func(_ tls.ConnectionState, _ error) { record(&tlsDone) },
+		GotFirstResponseByte: func() { record(&ttfbDone) },
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
-	// Bind to interface if available
-	var localIP string
-	if ifaceName != "" {
-		if iface, err := net.InterfaceByName(ifaceName); err == nil {
-			if addrs, err := iface.Addrs(); err == nil {
-				for _, a := range addrs {
-					if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
-						localIP = ipnet.IP.String()
-						break
-					}
-				}
-			}
-		}
-	}
-
-	dialer := &net.Dialer{
-		Timeout: 3 * time.Second,
-	}
-	if localIP != "" {
-		dialer.LocalAddr = &net.TCPAddr{IP: net.ParseIP(localIP)}
-	}
 
 	transport := &http.Transport{
-		DialContext:         dialer.DialContext,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, // Allow local dish self-signed
+		DialContext:         binding.dialContext,
 		DisableKeepAlives:   true,
 		MaxIdleConns:        1,
 		IdleConnTimeout:     3 * time.Second,
 		TLSHandshakeTimeout: 3 * time.Second,
 	}
 
+ defer transport.CloseIdleConnections()
 	client := &http.Client{
+ CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 		Transport: transport,
 		Timeout:   4 * time.Second,
 	}
@@ -129,6 +120,8 @@ func (t *Tester) ProbeHTTP(targetName, targetURL, ifaceName string) HTTPProbeRes
 	}
 	defer resp.Body.Close()
 
+ traceMu.Lock()
+ defer traceMu.Unlock()
 	var dnsMs, tcpMs, tlsMs, ttfbMs int64
 	if !dnsStart.IsZero() && !dnsDone.IsZero() {
 		dnsMs = dnsDone.Sub(dnsStart).Milliseconds()
@@ -157,89 +150,60 @@ func (t *Tester) ProbeHTTP(targetName, targetURL, ifaceName string) HTTPProbeRes
 		TLSHandshakeMs: tlsMs,
 		TTFBMs:         ttfbMs,
 		TotalMs:        totalMs,
-		IsSuccess:      resp.StatusCode >= 200 && resp.StatusCode < 400,
+		IsSuccess:      resp.StatusCode >= 200 && resp.StatusCode < 300,
 		Protocol:       proto,
 	}
 }
 
-// ProbeDNS measures name resolution speed and record count for a domain.
-func (t *Tester) ProbeDNS(domain, server string) DNSProbeResult {
-	start := time.Now()
-	ips, err := net.LookupHost(domain)
-	elapsed := time.Since(start).Milliseconds()
-
-	if err != nil {
-		return DNSProbeResult{
-			Domain:        domain,
-			ResolveTimeMs: elapsed,
-			IPs:           []string{},
-			IsSuccess:     false,
-			Server:        server,
-		}
-	}
-
-	return DNSProbeResult{
-		Domain:        domain,
-		ResolveTimeMs: elapsed,
-		IPs:           ips,
-		IsSuccess:     len(ips) > 0,
-		Server:        server,
-	}
+// ProbeDNSOnInterface sends the DNS query to the declared server using the selected interface.
+func (t *Tester) ProbeDNSOnInterface(ctx context.Context, domain, server, ifaceName string) DNSProbeResult {
+ result := DNSProbeResult{Domain: domain, Server: server, IPs: []string{}}
+ binding, err := resolveInterface(ifaceName)
+ if err != nil { result.Error = err.Error(); return result }
+ if net.ParseIP(server) == nil { result.Error = "DNS server must be an IP address"; return result }
+ ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+ defer cancel()
+ start := time.Now()
+ ips, err := binding.resolver(server).LookupIP(ctx, "ip4", domain)
+ result.ResolveTimeMs = time.Since(start).Milliseconds()
+ if err != nil { result.Error = err.Error(); return result }
+ for _, ip := range ips { result.IPs = append(result.IPs, ip.String()) }
+ result.IsSuccess = len(result.IPs) > 0
+ return result
 }
 
-// RunDiagnosticSuite performs complete ICMP, HTTP, and DNS diagnostics with link analytics.
 func (t *Tester) RunDiagnosticSuite(ifaceName string) DiagnosticSuiteReport {
-	if ifaceName == "" {
-		ifaceName = "en0"
-	}
+ return t.RunDiagnosticSuiteContext(context.Background(), ifaceName)
+}
 
-	var localIP string
-	if iface, err := net.InterfaceByName(ifaceName); err == nil {
-		if addrs, err := iface.Addrs(); err == nil {
-			for _, a := range addrs {
-				if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
-					localIP = ipnet.IP.String()
-					break
-				}
-			}
-		}
-	}
-
-	// 1. ICMP Ping Targets
-	pings := t.RunDiagnosticsOnInterface(ifaceName)
-
-	// Add Gateway / Dish ping if localIP is available
-	gatewayIP := "192.168.0.1"
-	if strings.HasPrefix(localIP, "192.168.4.") {
-		gatewayIP = "192.168.4.1"
-	} else if strings.HasPrefix(localIP, "192.168.100.") {
-		gatewayIP = "192.168.100.1"
-	}
-	pings = append([]PingResult{t.PingTargetOnInterface(ifaceName, gatewayIP, 53)}, pings...)
-
-	// 2. HTTP Probes
-	httpTargets := []struct {
-		name string
-		url  string
-	}{
-		{"Cloudflare Edge", "https://1.1.1.1"},
-		{"Google Web Index", "https://www.google.com"},
-		{"Starlink Dish Core", "http://192.168.100.1"},
-	}
-	var httpProbes []HTTPProbeResult
-	for _, target := range httpTargets {
-		httpProbes = append(httpProbes, t.ProbeHTTP(target.name, target.url, ifaceName))
-	}
-
-	// 3. DNS Resolution Probes
-	dnsDomains := []string{"cloudflare.com", "starlink.com", "google.com", "apple.com"}
-	var dnsProbes []DNSProbeResult
-	for _, domain := range dnsDomains {
-		dnsProbes = append(dnsProbes, t.ProbeDNS(domain, "System DNS"))
-	}
+func (t *Tester) RunDiagnosticSuiteContext(ctx context.Context, ifaceName string) DiagnosticSuiteReport {
+ binding, err := resolveInterface(ifaceName)
+ if err != nil { return DiagnosticSuiteReport{Interface: ifaceName, Pings: []PingResult{}, HTTPProbes: []HTTPProbeResult{}, DNSProbes: []DNSProbeResult{}, JitterMs: -1, AvgLatencyMs: -1, MinLatencyMs: -1, MaxLatencyMs: -1, PacketLossPercent: 100, QualityGrade: "Unavailable", Timestamp: time.Now(), Error: err.Error()} }
+ localIP := binding.ip.String()
+ ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+ defer cancel()
+ // No guessed gateway: interface subnets do not establish the router address.
+ gatewayIP := ""
+ var pings []PingResult
+ httpTargets := []struct{name, url string}{{"Cloudflare Edge", "https://1.1.1.1"}, {"Google", "https://www.google.com"}}
+ httpProbes := make([]HTTPProbeResult, len(httpTargets))
+ dnsDomains := []string{"cloudflare.com", "google.com", "apple.com"}
+ dnsProbes := make([]DNSProbeResult, len(dnsDomains))
+ var wg sync.WaitGroup
+ wg.Add(1)
+ go func() { defer wg.Done(); pings = t.RunDiagnosticsOnInterfaceContext(ctx, ifaceName) }()
+ for i, target := range httpTargets {
+  wg.Add(1)
+  go func(i int, name, url string) { defer wg.Done(); httpProbes[i] = t.ProbeHTTPContext(ctx, name, url, ifaceName) }(i, target.name, target.url)
+ }
+ for i, domain := range dnsDomains {
+  wg.Add(1)
+  go func(i int, domain string) { defer wg.Done(); dnsProbes[i] = t.ProbeDNSOnInterface(ctx, domain, "1.1.1.1", ifaceName) }(i, domain)
+ }
+ wg.Wait()
 
 	// 4. Calculate Analytics (Jitter, Min/Avg/Max, Quality Score & Grade)
-	var latencies []float64
+	
 	var minLat int64 = math.MaxInt64
 	var maxLat int64 = 0
 	var totalLat float64
@@ -248,7 +212,6 @@ func (t *Tester) RunDiagnosticSuite(ifaceName string) DiagnosticSuiteReport {
 
 	for _, p := range pings {
 		if p.IsReachable && p.RTTMs >= 0 {
-			latencies = append(latencies, float64(p.RTTMs))
 			totalLat += float64(p.RTTMs)
 			if p.RTTMs < minLat {
 				minLat = p.RTTMs
@@ -261,28 +224,20 @@ func (t *Tester) RunDiagnosticSuite(ifaceName string) DiagnosticSuiteReport {
 	}
 
 	if minLat == math.MaxInt64 {
-		minLat = 0
+		minLat = -1
+ maxLat = -1
 	}
 
-	var avgLat float64
+	avgLat := -1.0
 	if successCount > 0 {
 		avgLat = totalLat / float64(successCount)
 	}
 
-	// Calculate Jitter (Mean Absolute Difference between consecutive samples)
-	var jitter float64
-	if len(latencies) > 1 {
-		var diffSum float64
-		for i := 1; i < len(latencies); i++ {
-			diffSum += math.Abs(latencies[i] - latencies[i-1])
-		}
-		jitter = diffSum / float64(len(latencies)-1)
-	}
-
-	var lossPercent float64
-	if totalPackets > 0 {
-		lossPercent = float64(totalPackets-successCount) / float64(totalPackets) * 100.0
-	}
+ // Different remote hosts are not consecutive latency samples from one path.
+ jitter := -1.0
+ var lossPercent float64
+ for _, p := range pings { lossPercent += p.PacketLossPercent }
+ if totalPackets > 0 { lossPercent /= float64(totalPackets) }
 
 	// Composite Quality Score (0 to 100)
 	// Factors: Loss (-50 max), Latency (-30 max for >100ms), Jitter (-20 max for >30ms)
@@ -293,6 +248,7 @@ func (t *Tester) RunDiagnosticSuite(ifaceName string) DiagnosticSuiteReport {
 	if jitter > 5 {
 		score -= math.Min(20, (jitter-5)*0.5)
 	}
+ if successCount == 0 { score = 0 }
 	if score < 0 {
 		score = 0
 	}

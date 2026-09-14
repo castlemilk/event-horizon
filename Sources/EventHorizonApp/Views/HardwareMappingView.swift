@@ -29,9 +29,9 @@ public struct HardwareMappingView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if let selected = selectedDeviceForDetail {
+            if let selection = selectedDeviceForDetail, let selected = nodes.first(where: { $0.id == selection.id }) {
                 // Per-Device Dedicated Detail View
-                let stat = interfaceStats.first(where: { selected.bsdInterface.contains($0.name) })
+                let stat = selected.matchingStat(in: interfaceStats)
                 PerDeviceDetailView(
                     node: selected,
                     hotspots: hotspots,
@@ -41,11 +41,19 @@ public struct HardwareMappingView: View {
                     onSelectHotspot: onSelectHotspot
                 )
             } else {
+                if selectedDeviceForDetail != nil {
+                    Label("The selected adapter is no longer available.", systemImage: "cable.connector.slash")
+                        .foregroundStyle(.secondary)
+                    Button("All Devices") { selectedDeviceForDetail = nil }
+                }
+                if nodes.isEmpty {
+                    ContentUnavailableView("No adapters available", systemImage: "network.slash", description: Text("Wait for the daemon to connect, then attach your network adapter."))
+                }
                 // Collapsible Device List View
                 VStack(spacing: 10) {
                     ForEach(nodes) { node in
                         let isExpanded = expandedDeviceIDs.contains(node.id)
-                        let stat = interfaceStats.first(where: { node.bsdInterface.contains($0.name) })
+                        let stat = node.matchingStat(in: interfaceStats)
 
                         VStack(spacing: 0) {
                             // Compact Collapsible Header Row

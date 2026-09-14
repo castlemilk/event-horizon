@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/castlemilk/event-horizon/pkg/driver"
 	"github.com/castlemilk/event-horizon/pkg/netstat"
@@ -47,10 +48,20 @@ func writeJSONResponse(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// fetchDongles reports USB dongle presence. A package var so tests can
+// stub hardware state without touching libusb. Defaults to the shared
+// TTL cache — never enumerate synchronously here: these handlers serve
+// every UI poll and a stalled enumeration wedges the app's heartbeat.
+var fetchDongles = usb.CachedDongles
+
 func NewServer(scanner *wifi.Scanner, port int) *Server {
 	wd := supervisor.GetWatchdog()
 	wd.SetDeviceChecker(func() (bool, string, uint16, uint16) {
-		dongles := usb.ListWiFiDongles()
+		// Cached like every other hot path: a synchronous enumeration here
+		// runs on the watchdog's tick and used to pile into libusb
+		// alongside the UI polls. Cold cache reads as absent for one tick;
+		// the checker re-runs and corrects itself on the next.
+		dongles, _ := fetchDongles()
 		if len(dongles) > 0 {
 			return true, dongles[0].Name, dongles[0].VendorID, dongles[0].ProductID
 		}
@@ -303,24 +314,104 @@ func (s *Server) Start() {
 	mux.HandleFunc("/api/starlink/status", corsHandler(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		connectedSSID := s.scanner.ConnectedSSID()
-		if connectedSSID == "" {
-			connectedSSID = usb.GetDongleConnected()
+		// connectedSSID is read from two sources, but they describe PAST
+		// state: the scanner's most-recently-selected network (sticky even
+		// when nothing is on it) and the link service's last-known good
+		// SSID (also sticky — it's only updated by an explicit
+		// SetDongleConnected, never cleared). Neither resets when the
+		// dongle physically disappears from the bus, so without an
+		// explicit guard the response would say "associated with
+		// aliens exist" while the Ugreen ghost is the only thing on
+		// USB. Gate the cached SSID on a confirmed-dongle reading:
+		// when present is false or unprobed, the SSID is unknown.
+		var connectedSSID string
+		dongles, probed := fetchDongles()
+		donglePresent := len(dongles) > 0
+		if donglePresent {
+			connectedSSID = s.scanner.ConnectedSSID()
+			if connectedSSID == "" {
+				connectedSSID = usb.GetDongleConnected()
+			}
+		}
+
+		// Dongle presence is its own fact, distinct from association. This
+		// used to collapse both into "not associated with any network",
+		// which sent operators to re-run the link bring-up for hardware
+		// that was sitting in a drawer. The three states need three
+		// answers: absent means a physical replug (software cannot power
+		// cycle the bus), ZeroCD storage mode means run the bring-up, and
+		// only an operational-but-unassociated dongle means "link it".
+		//
+		// Presence arrives through the shared TTL cache and can be cold on
+		// a fresh daemon: until the first background pass lands, none of
+		// the three claims can be made, so the handler says "probing"
+		// rather than picking one. A cold cache is seconds old, not
+		// evidence.
+		usbStage := "absent"
+		for _, d := range dongles {
+			if d.IsWlan {
+				usbStage = "operational"
+				break
+			}
+			usbStage = "zerocd"
 		}
 
 		data := map[string]interface{}{
 			// What the daemon genuinely observes.
 			"ssid":           connectedSSID,
 			"associated":     connectedSSID != "",
+			"dongle_present": donglePresent,
+			"usb_stage":      usbStage,
 			"bridge_up":      tun.GlobalPump() != nil,
 			"dish_reachable": false,
 			"device_state":   "UNKNOWN",
 			"status":         "UNKNOWN",
 		}
 
-		if connectedSSID == "" {
+		switch {
+		case !probed:
+			// No completed pass yet: presence is unknown, so neither the
+			// present key nor a stage claim goes out. Absent-by-default
+			// here would flash a replug instruction on every daemon start.
+			delete(data, "dongle_present")
+			data["ssid"] = ""
+			data["associated"] = false
+			data["usb_stage"] = "probing"
+			data["reason"] = "checking the USB bus for the dongle"
+		case !donglePresent:
+			// The CLI link process holds the USB claim exclusively while a
+			// link is up, so an empty bus scan is ALSO what a WORKING link
+			// looks like from here. Check the linkstate record before
+			// claiming the dongle is gone: a live record (writing process
+			// exists, entry fresh) means the link is up even though we
+			// cannot see the radio. Without this the endpoint said
+			// NO_DONGLE while utun11 carried traffic.
+			if ls := usb.ReadDongleLinkState(time.Now()); ls.Alive && ls.Record.SSID != "" {
+				data["ssid"] = ls.Record.SSID
+				data["associated"] = true
+				data["dongle_present"] = true
+				data["usb_stage"] = "operational"
+				data["status"] = "LINKED"
+				data["reason"] = "linked to " + ls.Record.SSID + " via " + ls.Record.Iface +
+					" (" + ls.Record.IP + ") — the link CLI holds the USB claim, so this daemon cannot scan the bus directly"
+			} else {
+				// No dongle on the bus and no live link record — the cached
+				// SSID is a lie about a dongle that isn't there. Clear both.
+				data["ssid"] = ""
+				data["associated"] = false
+				data["status"] = "NO_DONGLE"
+				data["reason"] = "no Wi-Fi dongle on the USB bus — unplug the dongle for ~10s " +
+					"and replug it, then bring the link up (POST /api/wifi/link)"
+			}
+		case usbStage == "zerocd":
+			data["ssid"] = ""
+			data["associated"] = false
+			data["status"] = "DONGLE_ZEROCD"
+			data["reason"] = "dongle is present in ZeroCD storage mode — no replug needed, " +
+				"bring the link up (POST /api/wifi/link) to flash and associate"
+		case connectedSSID == "":
 			data["reason"] = "the dongle is not associated with any network"
-		} else {
+		default:
 			data["reason"] = "associated with " + connectedSSID +
 				", but no Starlink terminal answered through the bridge"
 		}

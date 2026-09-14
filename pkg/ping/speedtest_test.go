@@ -31,3 +31,14 @@ func TestSpeedTesterSimulatedRun(t *testing.T) {
 		t.Errorf("Invalid progress percent: %f", status.ProgressPercent)
 	}
 }
+
+func TestSpeedTestRejectsMissingInterface(t *testing.T) {
+	st := &SpeedTester{}
+	if err := st.StartTest("missing-dongle"); err == nil {
+		t.Fatal("speed test accepted a disconnected interface")
+	}
+	status := st.GetStatus()
+	if status.IsRunning || status.DownloadMbps != 0 || status.UploadMbps != 0 {
+		t.Fatalf("invalid interface returned measured throughput: %+v", status)
+	}
+}

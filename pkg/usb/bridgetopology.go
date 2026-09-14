@@ -43,13 +43,18 @@ func BridgeInterfaces(linkUp bool, linkDetail, ssid string) []HardwareTopology {
 		return []HardwareTopology{{
 			USBDriver:     "USB Wi-Fi dongle (bridge missing)",
 			BSDInterface:  name,
-			NetworkTarget: ssid,
+			NetworkTarget: "",
 			Status:        "Link reports up, but " + name + " does not exist",
 			DriverType:    "User-space libusb + utun",
 		}}
 	}
 
 	addr, mask := firstIPv4(iface)
+    status := "Active (user-space bridge)"
+    if iface.Flags&net.FlagUp == 0 || addr == "" {
+        status = "Bridge unavailable — waiting for network configuration"
+        ssid = ""
+    }
 	return []HardwareTopology{{
 		USBDriver:     "USB Wi-Fi dongle (claimed by this daemon)",
 		BSDInterface:  name,
@@ -57,7 +62,7 @@ func BridgeInterfaces(linkUp bool, linkDetail, ssid string) []HardwareTopology {
 		IPAddress:     addr,
 		SubnetMask:    mask,
 		MACAddress:    iface.HardwareAddr.String(),
-		Status:        "Active (user-space bridge)",
+		Status:        status,
 		DriverType:    "User-space libusb + utun",
 	}}
 }
@@ -77,9 +82,13 @@ func ClaimedDongleNote(linkUp bool) string {
 func utunFromDetail(detail string) string {
 	for _, f := range strings.Fields(detail) {
 		f = strings.Trim(f, ",;:")
-		if strings.HasPrefix(f, "utun") {
-			return f
-		}
+		if strings.HasPrefix(f, "utun") && len(f) > 4 {
+            valid := true
+            for _, digit := range f[4:] {
+                if digit < '0' || digit > '9' { valid = false; break }
+            }
+            if valid { return f }
+        }
 	}
 	return ""
 }

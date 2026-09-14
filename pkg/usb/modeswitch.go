@@ -36,6 +36,7 @@ import (
 	"log"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -80,6 +81,7 @@ type DeviceInfo struct {
 	IsWlan    bool
 	IsStorage bool // ZeroCD mass-storage mode awaiting mode-switch
 	BusPath   string
+	Speed     string // Negotiated USB bus speed, not Wi-Fi throughput.
 }
 
 // usbDevice is a raw enumerated USB device.
@@ -89,6 +91,7 @@ type usbDevice struct {
 	devAddr  uint8
 	name     string
 	serial   string
+	speed    int
 }
 
 // enumerateUSB lists every device currently attached to the USB bus.
@@ -119,6 +122,7 @@ func enumerateUSB() ([]usbDevice, error) {
 			pid:     uint16(desc.idProduct),
 			busNum:  uint8(C.libusb_get_bus_number(dev)),
 			devAddr: uint8(C.libusb_get_device_address(dev)),
+			speed:   int(C.libusb_get_device_speed(dev)),
 		}
 
 		var handle *C.libusb_device_handle
@@ -167,6 +171,7 @@ func classifyDevice(d usbDevice) *DeviceInfo {
 		Serial:    d.serial,
 		Name:      d.name,
 		BusPath:   fmt.Sprintf("%d-%d", d.busNum, d.devAddr),
+		Speed:     usbBusSpeed(d.speed),
 	}
 
 	switch {
@@ -196,6 +201,94 @@ func classifyDevice(d usbDevice) *DeviceInfo {
 		return nil
 	}
 	return info
+}
+
+// Presence caching: USB enumeration must never sit on a request path.
+//
+// ListWiFiDongles inits libusb, opens every device for string descriptors
+// and exits, on every call — and that call has been observed to stall
+// indefinitely against a half-enumerated ZeroCD dongle (a stale ghost node
+// beside a fresh one). Three hot paths called it directly: the watchdog
+// device checker, /api/hardware/topology, and /api/starlink/status, each
+// polled every few seconds. One stall then wedged every UI heartbeat at
+// once, which is how a present-but-otherwise-fine daemon reads as dead.
+//
+// CachedDongles refreshes on a single background pass at most once per
+// dongleCacheTTL and serves the last completed result to everyone.
+// Callers that have never seen a completed pass get probed=false and must
+// say "probing", never "absent": no data is not data of absence.
+func CachedDongles() (dongles []DeviceInfo, probed bool) {
+	dongleCacheMu.Lock()
+	defer dongleCacheMu.Unlock()
+	if dongleCacheOK && time.Since(dongleCacheAt) < dongleCacheTTL {
+		return append([]DeviceInfo(nil), dongleCacheDevs...), true
+	}
+	if !dongleCacheRefreshing || time.Since(dongleCacheRefreshAt) > dongleCacheForceAfter {
+		dongleCacheRefreshing = true
+		dongleCacheRefreshAt = time.Now()
+		dongleCacheGeneration++
+		generation := dongleCacheGeneration
+		enumerate := enumerateDongles
+		go func() {
+			devs := enumerate()
+			dongleCacheMu.Lock()
+			// A replaced pass can finish late after an unplug/mode change.
+			// It must never overwrite the newer observation.
+			if generation == dongleCacheGeneration {
+				dongleCacheDevs, dongleCacheAt, dongleCacheOK, dongleCacheRefreshing =
+					devs, time.Now(), true, false
+			}
+			dongleCacheMu.Unlock()
+		}()
+	}
+	// Stale-but-completed beats nothing: a wedged refresher must not
+	// downgrade "saw a dongle a minute ago" into "no dongle".
+	return append([]DeviceInfo(nil), dongleCacheDevs...), dongleCacheOK
+}
+
+var (
+	dongleCacheMu         sync.Mutex
+	dongleCacheDevs       []DeviceInfo
+	dongleCacheAt         time.Time
+	dongleCacheOK         bool
+	dongleCacheRefreshing bool
+	dongleCacheGeneration uint64
+	// dongleCacheRefreshAt is when the in-flight pass started. A pass
+	// that never returns must not pin the cache forever, so past
+	// dongleCacheForceAfter a replacement starts and the stuck one leaks.
+	dongleCacheRefreshAt time.Time
+
+	dongleCacheTTL = 5 * time.Second
+	// dongleCacheForceAfter bounds how long one wedged refresh can pin
+	// the cache: past this age a replacement pass starts even if the
+	// previous one never came back. The stuck goroutine leaks — one per
+	// wedged episode, documented here so it stays a considered cost.
+	dongleCacheForceAfter = 60 * time.Second
+)
+
+// enumerateDongles is ListWiFiDongles behind a seam: the cache's
+// background pass calls this, and tests stub it so no test ever depends
+// on real hardware — or hangs on a wedged bus.
+var enumerateDongles = ListWiFiDongles
+
+// resetDongleCache returns the cache to cold, for tests only.
+func resetDongleCache() {
+	dongleCacheMu.Lock()
+	defer dongleCacheMu.Unlock()
+	dongleCacheGeneration++
+	dongleCacheDevs, dongleCacheAt, dongleCacheOK, dongleCacheRefreshing =
+		nil, time.Time{}, false, false
+	dongleCacheRefreshAt = time.Time{}
+}
+
+// cachedDonglesForTopology is CachedDongles for the topology walk,
+// which only needs completed passes.
+func cachedDonglesForTopology() []DeviceInfo {
+	devs, probed := CachedDongles()
+	if !probed {
+		return nil
+	}
+	return devs
 }
 
 // ListWiFiDongles enumerates the USB bus and returns every Wi-Fi dongle present,
@@ -310,4 +403,22 @@ func CheckAndSwitchDevices() (*DeviceInfo, error) {
 
 	// Mode-switch the first ZeroCD storage-mode dongle.
 	return SwitchStorageDongleMode()
+}
+
+// Values follow enum libusb_speed in libusb.h. Unknown speed remains unknown.
+func usbBusSpeed(speed int) string {
+	switch speed {
+	case 1:
+		return "USB 1.5 Mbps"
+	case 2:
+		return "USB 12 Mbps"
+	case 3:
+		return "USB 480 Mbps"
+	case 4:
+		return "USB 5 Gbps"
+	case 5:
+		return "USB 10 Gbps"
+	default:
+		return ""
+	}
 }
