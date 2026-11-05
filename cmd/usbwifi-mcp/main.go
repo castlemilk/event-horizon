@@ -98,6 +98,10 @@ func main() {
 }
 
 func handleRequest(req JSONRPCRequest) {
+	// Notifications have no id and must not receive a JSON-RPC response.
+	if req.ID == nil {
+		return
+	}
 	switch req.Method {
 	case "initialize":
 		sendResponse(req.ID, map[string]interface{}{
@@ -111,8 +115,8 @@ func handleRequest(req JSONRPCRequest) {
 			},
 		})
 
-	case "notifications/initialized":
-		return
+	case "ping":
+		sendResponse(req.ID, map[string]interface{}{})
 
 	case "tools/list":
 		tools := getAvailableTools()
